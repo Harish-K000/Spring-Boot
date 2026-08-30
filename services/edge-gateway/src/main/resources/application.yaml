@@ -1,0 +1,137 @@
+spring:
+  application:
+    name: edge-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Downstream paths are preserved as-is, so no StripPrefix filter is needed.
+          routes:
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URI:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/protected/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: authGateway
+                    statusCodes: 500,502,503,504
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+            - id: orders-service
+              uri: ${ORDERS_SERVICE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/orders/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: ordersGateway
+                    statusCodes: 500,502,503,504
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+            - id: inventory-service
+              uri: ${INVENTORY_SERVICE_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/products/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: inventoryGateway
+                    statusCodes: 500,502,503,504
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+            - id: payments-service
+              uri: ${PAYMENTS_SERVICE_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/payments/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: paymentsGateway
+                    statusCodes: 500,502,503,504
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 10s
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
+
+server:
+  port: 8080
+  shutdown: graceful
+
+security:
+  jwt:
+    # Must be the same secret used by auth-service. Startup fails when it is absent or weak.
+    secret: ${JWT_SECRET:}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+      group:
+        readiness:
+          include: readinessState
+      show-details: never
+  endpoints:
+    web:
+      exposure:
+        # "gateway" exposes /actuator/gateway/routes for inspecting the routing table.
+        include: health,info,metrics,prometheus,gateway
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACE_SAMPLING_PROBABILITY:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORT_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      authGateway:
+        base-config: default
+      ordersGateway:
+        base-config: default
+      inventoryGateway:
+        base-config: default
+      paymentsGateway:
+        base-config: default
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 8s
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:logstash}
+  level:
+    org.springframework.cloud.gateway: INFO

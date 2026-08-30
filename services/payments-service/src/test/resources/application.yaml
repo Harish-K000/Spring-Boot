@@ -1,0 +1,14 @@
+# In-memory H2 so the suite needs no Docker/Postgres. Flyway is off and Hibernate builds the
+# schema from the entities, so these tests exercise mappings but not the real migrations.
+spring:
+  datasource:
+    url: jdbc:h2:mem:payments;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false

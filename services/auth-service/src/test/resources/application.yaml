@@ -1,0 +1,20 @@
+# Tests run against in-memory H2 in PostgreSQL compatibility mode, so the suite needs no
+# Docker/Postgres. Flyway is off; Hibernate creates the schema from the entities, which means
+# these tests exercise the mappings but do NOT verify them against the real migrations.
+spring:
+  datasource:
+    url: jdbc:h2:mem:auth;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+
+security:
+  jwt:
+    secret: test-secret-with-at-least-32-bytes-only

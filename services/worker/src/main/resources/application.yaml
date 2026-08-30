@@ -1,0 +1,82 @@
+spring:
+  application:
+    name: worker
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:platform}?currentSchema=worker}
+    username: ${DB_USER:platform}
+    password: ${DB_PASS:platform}
+    hikari:
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:1000}
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:10}
+      minimum-idle: ${DB_MIN_IDLE:2}
+  flyway:
+    enabled: true
+    create-schemas: true
+    schemas: worker
+    default-schema: worker
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_COMMAND_TIMEOUT:2s}
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
+
+worker:
+  scheduling:
+    enabled: ${WORKER_SCHEDULING_ENABLED:true}
+  relay:
+    batch-size: ${OUTBOX_BATCH_SIZE:50}
+    fixed-delay-ms: ${OUTBOX_RELAY_DELAY_MS:1000}
+    initial-delay-ms: ${OUTBOX_RELAY_INITIAL_DELAY_MS:2000}
+    claim-timeout-seconds: ${OUTBOX_CLAIM_TIMEOUT_SECONDS:60}
+  stream:
+    key: ${DOMAIN_EVENT_STREAM:platform:domain-events}
+    group: ${DOMAIN_EVENT_GROUP:platform-workers}
+    consumer: ${DOMAIN_EVENT_CONSUMER:${HOSTNAME:platform-worker}}
+    batch-size: ${DOMAIN_EVENT_BATCH_SIZE:25}
+    fixed-delay-ms: ${DOMAIN_EVENT_POLL_DELAY_MS:500}
+    initial-delay-ms: ${DOMAIN_EVENT_POLL_INITIAL_DELAY_MS:2500}
+    pending-idle-seconds: ${DOMAIN_EVENT_PENDING_IDLE_SECONDS:10}
+    max-deliveries: ${DOMAIN_EVENT_MAX_DELIVERIES:5}
+    dead-letter-key: ${DOMAIN_EVENT_DEAD_LETTER_STREAM:platform:domain-events:dead-letter}
+
+server:
+  port: ${WORKER_PORT:8085}
+  shutdown: graceful
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+      group:
+        readiness:
+          include: readinessState,db,redis
+      show-details: never
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  observations:
+    annotations:
+      enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACE_SAMPLING_PROBABILITY:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORT_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:logstash}
