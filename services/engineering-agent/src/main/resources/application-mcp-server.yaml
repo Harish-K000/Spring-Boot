@@ -1,0 +1,27 @@
+server:
+  address: 127.0.0.1
+  port: 8091
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:engineering-mcp-server;DB_CLOSE_DELAY=-1
+  ai:
+    mcp:
+      client:
+        enabled: false
+      server:
+        enabled: true
+        name: engineering-tools
+        version: 1.0.0
+        protocol: STREAMABLE
+        type: SYNC
+        request-timeout: 600s
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
+agent:
+  execution:
+    mode: server

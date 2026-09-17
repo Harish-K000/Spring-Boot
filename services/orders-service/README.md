@@ -6,7 +6,7 @@ private to the deployment network.
 
 ## Checkout
 
-Create a checkout with the authenticated user identity supplied by the gateway and a caller-stable
+Create a checkout with a bearer token that Orders validates independently and a caller-stable
 idempotency key:
 
 ```http
@@ -18,8 +18,8 @@ Content-Type: application/json
 {"items":[{"productId":"00000000-0000-0000-0000-000000000001","quantity":2}]}
 ```
 
-The gateway replaces `X-User-Id` from the validated JWT. Orders does not accept a checkout user ID
-from the request body.
+Orders derives the checkout user from the verified JWT subject. It ignores `X-User-Id` for
+authorization and does not accept a checkout user ID from the request body.
 
 Checkout performs the following operation:
 
@@ -34,7 +34,8 @@ another reservation. Reusing the key for different contents returns `409 Conflic
 
 If a later product cannot be reserved or the order cannot be persisted, Orders attempts to release
 earlier reservations in reverse order. `POST /api/v1/orders/{id}/cancel` is idempotent, verifies
-ownership from `X-User-Id`, releases every reservation, and then changes the order to `CANCELLED`.
+ownership from the verified JWT subject, releases every reservation, and then changes the order to
+`CANCELLED`.
 
 Payments uses the private `/internal/v1/orders/{id}` contract to load the authoritative payable
 amount and to report paid or refunded outcomes. Paid callbacks link a unique payment ID and move the
@@ -60,6 +61,7 @@ Inventory dependency configuration:
 
 ```text
 INVENTORY_SERVICE_URI=http://localhost:8083
+JWT_SECRET=<same secret used by Auth Service, Gateway, Inventory, and Payments>
 ```
 
 The client uses a one-second connection timeout and two-second response timeout. Catalog reads may

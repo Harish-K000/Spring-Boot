@@ -10,7 +10,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-class RequestIdRestClientCustomizerTest {
+class CorrelationIdRestClientCustomizerTest {
 
     @AfterEach
     void clearMdc() {
@@ -18,15 +18,15 @@ class RequestIdRestClientCustomizerTest {
     }
 
     @Test
-    void propagatesCurrentRequestIdToDownstreamCalls() {
+    void propagatesCurrentCorrelationIdToDownstreamCalls() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://downstream");
         new PlatformObservabilityAutoConfiguration()
-                .requestIdRestClientCustomizer().customize(builder);
+                .correlationIdRestClientCustomizer().customize(builder);
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("http://downstream/test"))
-                .andExpect(header(RequestCorrelationFilter.REQUEST_ID_HEADER, "request-456"))
+                .andExpect(header(CorrelationIds.HEADER, "request-456"))
                 .andRespond(withSuccess());
-        MDC.put(RequestCorrelationFilter.REQUEST_ID_MDC_KEY, "request-456");
+        MDC.put(CorrelationIds.MDC_KEY, "request-456");
 
         builder.build().get().uri("/test").retrieve().toBodilessEntity();
 

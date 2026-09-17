@@ -13,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.validation.annotation.Validated;
@@ -41,13 +43,14 @@ public class PaymentController {
 
     @PostMapping("/process")
     public ResponseEntity<PaymentResponse> process(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestHeader("Idempotency-Key")
             @Size(max = 100, message = "Idempotency-Key must be at most 100 characters")
             @Pattern(regexp = "^[A-Za-z0-9._-]+$", message = "Idempotency-Key contains invalid characters")
             String idempotencyKey,
             @Valid @RequestBody ProcessPaymentRequest request,
             UriComponentsBuilder uriBuilder) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         PaymentResponse payment = paymentProcessingService.process(userId, idempotencyKey, request);
         URI location = uriBuilder.path("/api/v1/payments/{id}").buildAndExpand(payment.id()).toUri();
         HttpStatus status = payment.status() == PaymentStatus.FAILED
@@ -57,22 +60,25 @@ public class PaymentController {
 
     @GetMapping("/{id}")
     public ResponseEntity<PaymentResponse> findById(@PathVariable UUID id,
-                                                    @RequestHeader("X-User-Id") UUID userId) {
+                                                    @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(paymentService.findById(id, userId));
     }
 
     @GetMapping
     public ResponseEntity<PageResponse<PaymentResponse>> findAll(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) UUID orderId,
             @RequestParam(required = false) PaymentStatus status,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(paymentService.findAllForUser(userId, orderId, status, pageable));
     }
 
     @PostMapping("/{id}/refund")
     public ResponseEntity<PaymentResponse> refund(@PathVariable UUID id,
-                                                  @RequestHeader("X-User-Id") UUID userId) {
+                                                  @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(paymentProcessingService.refund(id, userId));
     }
 

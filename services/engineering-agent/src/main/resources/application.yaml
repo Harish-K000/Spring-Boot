@@ -1,0 +1,73 @@
+server:
+  address: 127.0.0.1
+  port: 8090
+
+# Avoid framework DEBUG logging of prompts, tool evidence and compiler diagnostics.
+debug: false
+logging:
+  level:
+    root: INFO
+    org.springframework.web.client: INFO
+    org.springframework.web.servlet: INFO
+    org.springframework.ai: INFO
+
+spring:
+  application:
+    name: engineering-agent
+  datasource:
+    # A local file outside the repository. Set AGENT_AUDIT_DB_PATH to choose another file.
+    url: jdbc:h2:file:${AGENT_AUDIT_DB_PATH:${user.home}/.engineering-agent-audit}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/audit-schema.sql
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 120s
+  ai:
+    mcp:
+      server:
+        enabled: false
+      client:
+        enabled: true
+        name: engineering-agent
+        type: SYNC
+        request-timeout: 600s
+        streamable-http:
+          connections:
+            engineering:
+              url: ${AGENT_MCP_URL:http://127.0.0.1:8091}
+              endpoint: /mcp
+    model:
+      chat: ollama
+      embedding: none
+    ollama:
+      base-url: http://127.0.0.1:11434
+      init:
+        pull-model-strategy: never
+      chat:
+        options:
+          model: ${AGENT_MODEL:qwen2.5:1.5b}
+          temperature: 0.1
+          num-ctx: 4096
+          num-predict: 512
+    retry:
+      max-attempts: 1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  tracing:
+    enabled: false
+
+agent:
+  execution:
+    mode: mcp
+  # Empty discovers the nearest Git root from the application's working directory.
+  repository: ${AGENT_REPOSITORY:}
+  build:
+    # Empty uses the JDK that launched this service; override only when needed.
+    java-home: ${AGENT_BUILD_JAVA_HOME:}

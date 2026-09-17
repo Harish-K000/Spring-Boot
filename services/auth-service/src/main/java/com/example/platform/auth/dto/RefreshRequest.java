@@ -8,4 +8,9 @@ public record RefreshRequest(
         @NotBlank(message = "refreshToken is required")
         @Size(max = 512, message = "refreshToken is too long")
         String refreshToken
-) {}
+) {
+    @Override
+    public String toString() {
+        return "RefreshRequest[refreshToken=[REDACTED]]";
+    }
+}

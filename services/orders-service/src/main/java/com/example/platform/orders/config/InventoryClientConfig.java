@@ -1,5 +1,6 @@
 package com.example.platform.orders.config;
 
+import com.example.platform.security.PlatformJwtSecurity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,7 +25,10 @@ public class InventoryClientConfig {
                 .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
-        return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();
+        return builder.baseUrl(baseUrl)
+                .requestFactory(requestFactory)
+                .requestInterceptor(PlatformJwtSecurity.bearerTokenForwardingInterceptor())
+                .build();
     }
 
     @Bean

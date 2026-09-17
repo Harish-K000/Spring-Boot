@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:engineering-agent-tests;DB_CLOSE_DELAY=-1
+  ai:
+    mcp:
+      server:
+        enabled: false
+      client:
+        enabled: false
+
+agent:
+  execution:
+    mode: local

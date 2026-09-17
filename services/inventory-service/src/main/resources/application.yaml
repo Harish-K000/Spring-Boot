@@ -29,6 +29,11 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
 
+security:
+  jwt:
+    # Must match Auth Service and Edge Gateway. There is intentionally no fallback.
+    secret: ${JWT_SECRET:}
+
 server:
   port: 8083
   shutdown: graceful

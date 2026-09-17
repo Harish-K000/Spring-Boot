@@ -14,4 +14,9 @@ public record LoginRequest(
         @NotBlank(message = "password is required")
         @Size(max = 100, message = "password must be at most 100 characters")
         String password
-) {}
+) {
+    @Override
+    public String toString() {
+        return "LoginRequest[email=" + email + ", password=[REDACTED]]";
+    }
+}

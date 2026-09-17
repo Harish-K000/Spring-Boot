@@ -9,11 +9,15 @@ import com.example.platform.payments.service.PaymentProcessingService;
 import com.example.platform.payments.dto.ProcessPaymentRequest;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -47,17 +51,31 @@ class PaymentControllerTest {
                 "stripe", status, Instant.now(), Instant.now());
     }
 
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticate(UUID userId) {
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
     @Test
-    void processUsesTrustedIdentityAndReturnsCapturedPayment() throws Exception {
+    void processUsesVerifiedJwtIdentityAndIgnoresSpoofedHeader() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
         given(paymentProcessingService.process(eq(userId), eq("payment-key"),
                 any(ProcessPaymentRequest.class)))
                 .willReturn(sample(paymentId, PaymentStatus.CAPTURED));
+        authenticate(userId);
 
         mockMvc.perform(post("/api/v1/payments/process")
-                        .header("X-User-Id", userId)
+                        .header("X-User-Id", UUID.randomUUID())
                         .header("Idempotency-Key", "payment-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderId\":\"" + orderId
@@ -74,9 +92,9 @@ class PaymentControllerTest {
         given(paymentProcessingService.process(eq(userId), eq("decline-key"),
                 any(ProcessPaymentRequest.class)))
                 .willReturn(sample(UUID.randomUUID(), PaymentStatus.FAILED));
+        authenticate(userId);
 
         mockMvc.perform(post("/api/v1/payments/process")
-                        .header("X-User-Id", userId)
                         .header("Idempotency-Key", "decline-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderId\":\"" + orderId
@@ -96,8 +114,8 @@ class PaymentControllerTest {
 
     @Test
     void processWithMissingTokenReturns400() throws Exception {
+        authenticate(UUID.randomUUID());
         mockMvc.perform(post("/api/v1/payments/process")
-                        .header("X-User-Id", UUID.randomUUID())
                         .header("Idempotency-Key", "validation-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderId\":\"" + UUID.randomUUID() + "\"}"))
@@ -110,9 +128,9 @@ class PaymentControllerTest {
         UUID id = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         given(paymentService.findById(id, userId)).willThrow(new PaymentNotFoundException(id));
+        authenticate(userId);
 
-        mockMvc.perform(get("/api/v1/payments/{id}", id)
-                        .header("X-User-Id", userId))
+        mockMvc.perform(get("/api/v1/payments/{id}", id))
                 .andExpect(status().isNotFound());
     }
 
@@ -124,9 +142,9 @@ class PaymentControllerTest {
                 any(Pageable.class)))
                 .willReturn(new PageResponse<>(
                         List.of(sample(UUID.randomUUID(), PaymentStatus.CAPTURED)), 0, 20, 1, 1, true));
+        authenticate(userId);
 
         mockMvc.perform(get("/api/v1/payments")
-                        .header("X-User-Id", userId)
                         .param("orderId", orderId.toString())
                         .param("status", "CAPTURED"))
                 .andExpect(status().isOk())
@@ -139,17 +157,17 @@ class PaymentControllerTest {
         UUID id = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         given(paymentProcessingService.refund(id, userId)).willReturn(sample(id, PaymentStatus.REFUNDED));
+        authenticate(userId);
 
-        mockMvc.perform(post("/api/v1/payments/{id}/refund", id)
-                        .header("X-User-Id", userId))
+        mockMvc.perform(post("/api/v1/payments/{id}/refund", id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REFUNDED"));
     }
 
     @Test
     void unknownStatusFilterReturns400() throws Exception {
+        authenticate(UUID.randomUUID());
         mockMvc.perform(get("/api/v1/payments")
-                        .header("X-User-Id", UUID.randomUUID())
                         .param("status", "NOT_A_STATUS"))
                 .andExpect(status().isBadRequest());
     }

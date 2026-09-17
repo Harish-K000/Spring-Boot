@@ -18,11 +18,12 @@ class InventoryMigrationPostgresTest {
             new PostgreSQLContainer<>("postgres:15-alpine")
                     .withDatabaseName("platform")
                     .withUsername("platform")
-                    .withPassword("platform");
+                    .withPassword("platform")
+                    .withUrlParam("currentSchema", "inventory");
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> POSTGRES.getJdbcUrl() + "?currentSchema=inventory");
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");

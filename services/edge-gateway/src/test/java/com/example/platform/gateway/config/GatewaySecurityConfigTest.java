@@ -1,5 +1,6 @@
 package com.example.platform.gateway.config;
 
+import com.example.platform.gateway.error.GatewayErrorResponseWriter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -9,7 +10,8 @@ class GatewaySecurityConfigTest {
 
     @Test
     void weakJwtSecretFailsFast() {
-        GatewaySecurityConfig config = new GatewaySecurityConfig(new ObjectMapper());
+        GatewaySecurityConfig config = new GatewaySecurityConfig(
+                new GatewayErrorResponseWriter(new ObjectMapper()));
 
         assertThatThrownBy(() -> config.jwtDecoder("too-short"))
                 .isInstanceOf(IllegalStateException.class)

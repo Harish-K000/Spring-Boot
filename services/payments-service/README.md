@@ -18,9 +18,10 @@ Content-Type: application/json
 }
 ```
 
-The gateway replaces `X-User-Id` with the identity from the validated JWT. Payments loads the order
-from Orders and uses its authoritative owner, status, total, and currency; callers cannot submit an
-amount or currency. Payment method tokens are passed to the provider and are never stored.
+Payments validates the bearer token itself and derives the user from its UUID subject. It ignores
+`X-User-Id` for authorization. Payments then loads the order from Orders and uses its authoritative
+owner, status, total, and currency; callers cannot submit an amount or currency. Payment method
+tokens are passed to the provider and are never stored.
 
 The synchronous coordinator writes durable checkpoints around provider authorization and capture,
 then links the captured payment to the order through Orders' private API. Both provider calls and the
@@ -53,6 +54,7 @@ return `503`. Payment records are audit data and cannot be deleted.
 ```text
 ORDERS_SERVICE_URI=http://localhost:8082
 PAYMENT_PROVIDER=sandbox
+JWT_SECRET=<same secret used by Auth Service, Gateway, Orders, and Inventory>
 ```
 
 The built-in sandbox adapter is deterministic and exists for local development and contract tests.

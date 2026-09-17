@@ -15,6 +15,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.validation.annotation.Validated;
@@ -37,13 +39,14 @@ public class OrderController {
 
     @PostMapping("/checkout")
     public ResponseEntity<OrderResponse> checkout(
-            @RequestHeader("X-User-Id") UUID userId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestHeader("Idempotency-Key")
             @Size(max = 100, message = "Idempotency-Key must be at most 100 characters")
             @Pattern(regexp = "^[A-Za-z0-9._-]+$", message = "Idempotency-Key contains invalid characters")
             String idempotencyKey,
             @Valid @RequestBody CheckoutRequest request,
             UriComponentsBuilder uriBuilder) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         OrderResponse created = checkoutService.checkout(userId, idempotencyKey, request);
         URI location = uriBuilder.path("/api/v1/orders/{id}").buildAndExpand(created.id()).toUri();
         return ResponseEntity.created(location).body(created);
@@ -51,7 +54,8 @@ public class OrderController {
 
     @PostMapping("/{id}/cancel")
     public ResponseEntity<OrderResponse> cancel(@PathVariable UUID id,
-                                                @RequestHeader("X-User-Id") UUID userId) {
+                                                @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
         return ResponseEntity.ok(checkoutService.cancel(id, userId));
     }
 

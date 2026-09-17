@@ -74,6 +74,18 @@ class GatewayRoutesTest {
         assertThat(matches(ordersRoute, "/api/v1/products/abc")).isFalse();
     }
 
+    @Test
+    void inventoryRouteMatchesProductsAndInventoryAlias() {
+        Route inventoryRoute = routeLocator.getRoutes()
+                .filter(r -> "inventory-service".equals(r.getId()))
+                .blockFirst();
+
+        assertThat(inventoryRoute).isNotNull();
+        assertThat(matches(inventoryRoute, "/api/v1/products/abc")).isTrue();
+        assertThat(matches(inventoryRoute, "/api/v1/inventory/abc")).isTrue();
+        assertThat(matches(inventoryRoute, "/api/v1/orders/abc")).isFalse();
+    }
+
     /** Route predicates are asynchronous, so the result has to be subscribed to, not cast. */
     private boolean matches(Route route, String path) {
         MockServerWebExchange exchange =
