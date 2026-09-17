@@ -41,6 +41,11 @@ clients:
 
 spring.cloud.circuitbreaker.resilience4j.disable-time-limiter: true
 
+security:
+  jwt:
+    # Must match Auth Service and Edge Gateway. There is intentionally no fallback.
+    secret: ${JWT_SECRET:}
+
 resilience4j:
   circuitbreaker:
     instances:

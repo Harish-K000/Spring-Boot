@@ -1,5 +1,6 @@
 package com.example.platform.payments.config;
 
+import com.example.platform.security.PlatformJwtSecurity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +23,10 @@ public class OrderClientConfig {
         HttpClient client = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
         factory.setReadTimeout(readTimeout);
-        return builder.baseUrl(baseUrl).requestFactory(factory).build();
+        return builder.baseUrl(baseUrl)
+                .requestFactory(factory)
+                .requestInterceptor(PlatformJwtSecurity.bearerTokenForwardingInterceptor())
+                .build();
     }
 
     @Bean

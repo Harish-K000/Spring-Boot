@@ -54,7 +54,11 @@ docker compose -f infra/docker-compose.yml up -d postgres
 ./mvnw -f services/inventory-service/pom.xml spring-boot:run
 ```
 
-Database settings use `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASS`. Verify Phase 4 with:
+Database settings use `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASS`.
+`JWT_SECRET` is mandatory and must match Auth Service, the Edge Gateway, Orders, and Payments.
+Inventory validates the forwarded bearer token itself; health probes are the only public routes.
+
+Verify Phase 4 with:
 
 ```sh
 ./mvnw -pl services/inventory-service -am clean test

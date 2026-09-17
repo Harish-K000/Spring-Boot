@@ -1,47 +1,52 @@
 package com.example.platform.gateway.filter;
 
-import org.springframework.cloud.gateway.filter.GatewayFilterChain;
-import org.springframework.cloud.gateway.filter.GlobalFilter;
+import com.example.platform.observability.CorrelationIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import java.util.UUID;
-import java.util.regex.Pattern;
-
-/** Adds one safe request identifier to both the downstream request and gateway response. */
+/** Establishes one safe correlation ID before security and routing run. */
 @Component
-public class RequestCorrelationFilter implements GlobalFilter, Ordered {
+public class RequestCorrelationFilter implements WebFilter, Ordered {
 
-    public static final String REQUEST_ID_HEADER = "X-Request-Id";
-    public static final String REQUEST_ID_ATTRIBUTE = RequestCorrelationFilter.class.getName() + ".requestId";
-    private static final Pattern SAFE_REQUEST_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
+    public static final String CORRELATION_ID_HEADER = CorrelationIds.HEADER;
+    public static final String CORRELATION_ID_ATTRIBUTE =
+            RequestCorrelationFilter.class.getName() + ".correlationId";
     private static final Logger log = LoggerFactory.getLogger(RequestCorrelationFilter.class);
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String supplied = exchange.getRequest().getHeaders().getFirst(REQUEST_ID_HEADER);
-        String requestId = supplied != null && SAFE_REQUEST_ID.matcher(supplied).matches()
-                ? supplied
-                : UUID.randomUUID().toString();
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        String correlationId = CorrelationIds.resolve(
+                exchange.getRequest().getHeaders().getFirst(CORRELATION_ID_HEADER),
+                exchange.getRequest().getHeaders().getFirst(CorrelationIds.LEGACY_HEADER));
 
         ServerHttpRequest request = exchange.getRequest().mutate()
-                .headers(headers -> headers.set(REQUEST_ID_HEADER, requestId))
+                .headers(headers -> {
+                    headers.remove(CorrelationIds.LEGACY_HEADER);
+                    headers.set(CORRELATION_ID_HEADER, correlationId);
+                })
                 .build();
-        exchange.getResponse().getHeaders().set(REQUEST_ID_HEADER, requestId);
         ServerWebExchange correlated = exchange.mutate().request(request).build();
-        correlated.getAttributes().put(REQUEST_ID_ATTRIBUTE, requestId);
+        correlated.getAttributes().put(CORRELATION_ID_ATTRIBUTE, correlationId);
+        correlated.getResponse().getHeaders().set(CORRELATION_ID_HEADER, correlationId);
+        correlated.getResponse().beforeCommit(() -> {
+            correlated.getResponse().getHeaders().set(CORRELATION_ID_HEADER, correlationId);
+            return Mono.empty();
+        });
+
         long started = System.nanoTime();
         return chain.filter(correlated).doFinally(signal -> {
             long durationMs = (System.nanoTime() - started) / 1_000_000;
-            int status = exchange.getResponse().getStatusCode() == null
-                    ? 200 : exchange.getResponse().getStatusCode().value();
+            int status = correlated.getResponse().getStatusCode() == null
+                    ? 200 : correlated.getResponse().getStatusCode().value();
             log.atInfo()
-                    .addKeyValue("requestId", requestId)
+                    .addKeyValue("correlationId", correlationId)
                     .addKeyValue("httpMethod", request.getMethod().name())
                     .addKeyValue("httpPath", request.getPath().value())
                     .addKeyValue("httpStatus", status)
@@ -50,8 +55,9 @@ public class RequestCorrelationFilter implements GlobalFilter, Ordered {
         });
     }
 
+    /** Runs before Spring Security's WebFilterChainProxy (-100), including for 401/403 responses. */
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 1;
+        return Ordered.HIGHEST_PRECEDENCE;
     }
 }

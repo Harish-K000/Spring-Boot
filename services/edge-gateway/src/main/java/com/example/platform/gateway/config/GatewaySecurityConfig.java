@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -63,6 +64,10 @@ public class GatewaySecurityConfig {
                 .build();
         OAuth2TokenValidator<Jwt> issuerAndTime =
                 JwtValidators.createDefaultWithIssuer(TOKEN_ISSUER);
+        OAuth2TokenValidator<Jwt> expiration = jwt -> jwt.getExpiresAt() != null
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "Expiration is missing", null));
         OAuth2TokenValidator<Jwt> audience = jwt -> jwt.getAudience().contains(TOKEN_AUDIENCE)
                 ? OAuth2TokenValidatorResult.success()
                 : OAuth2TokenValidatorResult.failure(new OAuth2Error(
@@ -73,7 +78,7 @@ public class GatewaySecurityConfig {
                 : OAuth2TokenValidatorResult.failure(new OAuth2Error(
                         "invalid_token", "Subject is missing", null));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuerAndTime, audience, subject));
+                issuerAndTime, expiration, audience, subject));
         return decoder;
     }
 
@@ -99,8 +104,18 @@ public class GatewaySecurityConfig {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .logout(ServerHttpSecurity.LogoutSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers("/api/v1/auth/**", "/actuator/health", "/actuator/health/**",
-                                "/livez", "/readyz", "/actuator/info").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/register",
+                                "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**",
+                                "/livez", "/readyz").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/v1/orders/checkout",
+                                "/api/v1/orders/*/cancel").hasAnyRole("USER", "ADMIN")
+                        .pathMatchers("/api/v1/payments/**", "/api/v1/protected/**",
+                                "/api/v1/auth/**").hasAnyRole("USER", "ADMIN")
+                        .pathMatchers(HttpMethod.GET, "/api/v1/products/**",
+                                "/api/v1/inventory/**").hasAnyRole("USER", "ADMIN")
+                        .pathMatchers("/api/v1/orders/**", "/api/v1/products/**",
+                                "/api/v1/inventory/**", "/actuator/**").hasRole("ADMIN")
                         .anyExchange().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((exchange, exception) -> writeError(

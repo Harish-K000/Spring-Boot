@@ -1,0 +1,26 @@
+[
+  {
+    "id": "order-ownership",
+    "resource": "EvalOrderAccess.java",
+    "category": "AUTHORIZATION",
+    "lines": [7, 8]
+  },
+  {
+    "id": "sql-concatenation",
+    "resource": "EvalSqlQuery.java",
+    "category": "SQL_QUERY",
+    "lines": [6]
+  },
+  {
+    "id": "nullable-email",
+    "resource": "EvalNullableEmail.java",
+    "category": "NULL_HANDLING",
+    "lines": [4]
+  },
+  {
+    "id": "checked-email",
+    "resource": "EvalCheckedEmail.java",
+    "category": null,
+    "lines": []
+  }
+]

@@ -1,5 +1,6 @@
 package com.example.platform.gateway;
 
+import com.example.platform.observability.CorrelationIds;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
@@ -50,6 +51,7 @@ class GatewaySecurityIntegrationTest {
         webTestClient.get().uri("/__test/principal")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().exists(CorrelationIds.HEADER)
                 .expectHeader().contentType("application/json")
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(401)
@@ -81,7 +83,7 @@ class GatewaySecurityIntegrationTest {
     @Test
     void expiredTokenIsRejected() throws Exception {
         webTestClient.get().uri("/__test/principal")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(Instant.now().minusSeconds(1)))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(Instant.now().minusSeconds(120)))
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -96,8 +98,72 @@ class GatewaySecurityIntegrationTest {
     }
 
     @Test
+    void tokenForAnotherIssuerIsRejected() throws Exception {
+        webTestClient.get().uri("/__test/principal")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(
+                        Instant.now().plusSeconds(60), "backend-platform-api",
+                        "another-issuer", "user-123", SECRET))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void tokenWithoutSubjectIsRejected() throws Exception {
+        webTestClient.get().uri("/__test/principal")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(
+                        Instant.now().plusSeconds(60), "backend-platform-api",
+                        "backend-platform-auth", null, SECRET))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void tokenWithoutExpirationIsRejected() throws Exception {
+        webTestClient.get().uri("/__test/principal")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(
+                        null, "backend-platform-api", "backend-platform-auth", "user-123", SECRET))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void tokenSignedWithAnotherSecretIsRejected() throws Exception {
+        webTestClient.get().uri("/__test/principal")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(
+                        Instant.now().plusSeconds(60), "backend-platform-api",
+                        "backend-platform-auth", "user-123",
+                        "different-test-secret-with-at-least-32-bytes"))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void tamperedSignedTokenIsRejected() throws Exception {
+        String issued = token(Instant.now().plusSeconds(60));
+        char replacement = issued.charAt(issued.length() - 1) == 'A' ? 'B' : 'A';
+        String tampered = issued.substring(0, issued.length() - 1) + replacement;
+        webTestClient.get().uri("/__test/principal")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tampered)
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void sensitiveActuatorEndpointsRequireAuthentication() {
         webTestClient.get().uri("/actuator/metrics")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.get().uri("/actuator/info")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void broadAuthPrefixIsNotPublic() {
+        webTestClient.post().uri("/api/v1/auth/logout")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/auth/login")
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -107,17 +173,21 @@ class GatewaySecurityIntegrationTest {
     }
 
     private String token(Instant expiresAt, String audience) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user-123")
-                .issuer("backend-platform-auth")
+        return token(expiresAt, audience, "backend-platform-auth", "user-123", SECRET);
+    }
+
+    private String token(Instant expiresAt, String audience, String issuer,
+                         String subject, String signingSecret) throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
+                .issuer(issuer)
                 .audience(audience)
                 .claim("email", "user@example.com")
                 .claim("roles", "USER,ADMIN")
-                .issueTime(Date.from(Instant.now()))
-                .expirationTime(Date.from(expiresAt))
-                .build();
-        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
-        jwt.sign(new MACSigner(SECRET.getBytes(StandardCharsets.UTF_8)));
+                .issueTime(Date.from(Instant.now()));
+        if (subject != null) claims.subject(subject);
+        if (expiresAt != null) claims.expirationTime(Date.from(expiresAt));
+        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());
+        jwt.sign(new MACSigner(signingSecret.getBytes(StandardCharsets.UTF_8)));
         return jwt.serialize();
     }
 

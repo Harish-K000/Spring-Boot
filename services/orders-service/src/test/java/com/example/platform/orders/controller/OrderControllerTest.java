@@ -12,11 +12,15 @@ import com.example.platform.orders.service.CheckoutService;
 import com.example.platform.orders.dto.CheckoutRequest;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -51,6 +55,19 @@ class OrderControllerTest {
                 new BigDecimal("49.99"), "USD", Instant.now(), Instant.now());
     }
 
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticate(UUID userId) {
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
     @Test
     void createReturns201WithLocation() throws Exception {
         UUID id = UUID.randomUUID();
@@ -68,15 +85,16 @@ class OrderControllerTest {
     }
 
     @Test
-    void checkoutUsesGatewayIdentityAndReturns201() throws Exception {
+    void checkoutUsesVerifiedJwtIdentityAndIgnoresSpoofedHeader() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         given(checkoutService.checkout(eq(userId), eq("checkout-123"), any(CheckoutRequest.class)))
                 .willReturn(sampleResponse(orderId, OrderStatus.PENDING));
+        authenticate(userId);
 
         mockMvc.perform(post("/api/v1/orders/checkout")
-                        .header("X-User-Id", userId)
+                        .header("X-User-Id", UUID.randomUUID())
                         .header("Idempotency-Key", "checkout-123")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"items\":[{\"productId\":\"" + productId
@@ -100,9 +118,9 @@ class OrderControllerTest {
         UUID orderId = UUID.randomUUID();
         given(checkoutService.cancel(orderId, userId))
                 .willReturn(sampleResponse(orderId, OrderStatus.CANCELLED));
+        authenticate(userId);
 
-        mockMvc.perform(post("/api/v1/orders/{id}/cancel", orderId)
-                        .header("X-User-Id", userId))
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", orderId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
     }

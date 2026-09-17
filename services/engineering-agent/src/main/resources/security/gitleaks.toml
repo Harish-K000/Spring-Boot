@@ -1,0 +1,8 @@
+title = "Engineering agent working-tree secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Maven output is generated evidence, not source-controlled material"
+paths = ['''(^|/)target/''']

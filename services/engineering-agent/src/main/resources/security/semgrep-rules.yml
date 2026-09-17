@@ -1,0 +1,20 @@
+rules:
+  - id: java-runtime-command-execution
+    languages: [java]
+    severity: WARNING
+    message: Review process execution and validate every command argument.
+    pattern: Runtime.getRuntime().exec(...)
+
+  - id: java-sql-string-concatenation
+    languages: [java]
+    severity: WARNING
+    message: Review a query built by concatenation; use bound parameters for untrusted values.
+    pattern-either:
+      - pattern: $DB.executeQuery("..." + $VALUE)
+      - pattern: $DB.execute("..." + $VALUE)
+
+  - id: java-native-deserialization
+    languages: [java]
+    severity: WARNING
+    message: Review Java object deserialization of potentially untrusted input.
+    pattern: new ObjectInputStream(...).readObject()

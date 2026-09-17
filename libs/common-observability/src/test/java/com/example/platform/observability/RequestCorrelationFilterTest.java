@@ -6,6 +6,8 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RequestCorrelationFilterTest {
@@ -13,29 +15,42 @@ class RequestCorrelationFilterTest {
     private final RequestCorrelationFilter filter = new RequestCorrelationFilter();
 
     @Test
-    void preservesSafeRequestIdAndScopesItToTheRequest() throws Exception {
+    void preservesSafeCorrelationIdAndScopesItToTheRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/test");
-        request.addHeader(RequestCorrelationFilter.REQUEST_ID_HEADER, "request-123");
+        request.addHeader(CorrelationIds.HEADER, "request-123");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, (req, res) ->
-                assertThat(MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY))
+                assertThat(MDC.get(CorrelationIds.MDC_KEY))
                         .isEqualTo("request-123"));
 
-        assertThat(response.getHeader(RequestCorrelationFilter.REQUEST_ID_HEADER))
+        assertThat(response.getHeader(CorrelationIds.HEADER))
                 .isEqualTo("request-123");
-        assertThat(MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY)).isNull();
+        assertThat(MDC.get(CorrelationIds.MDC_KEY)).isNull();
     }
 
     @Test
-    void replacesUnsafeRequestId() throws Exception {
+    void replacesUnsafeCorrelationIdWithUuid() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/test");
-        request.addHeader(RequestCorrelationFilter.REQUEST_ID_HEADER, "unsafe value");
+        request.addHeader(CorrelationIds.HEADER, "unsafe value");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, new MockFilterChain());
 
-        assertThat(response.getHeader(RequestCorrelationFilter.REQUEST_ID_HEADER))
-                .isNotBlank().isNotEqualTo("unsafe value");
+        String generated = response.getHeader(CorrelationIds.HEADER);
+        assertThat(generated).isNotBlank().isNotEqualTo("unsafe value");
+        assertThat(UUID.fromString(generated).toString()).isEqualTo(generated);
+    }
+
+    @Test
+    void acceptsLegacyRequestIdButReturnsCanonicalHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/test");
+        request.addHeader(CorrelationIds.LEGACY_HEADER, "legacy-123");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getHeader(CorrelationIds.HEADER)).isEqualTo("legacy-123");
+        assertThat(response.getHeader(CorrelationIds.LEGACY_HEADER)).isNull();
     }
 }

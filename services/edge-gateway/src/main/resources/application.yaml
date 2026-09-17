@@ -38,8 +38,14 @@ spring:
             - id: inventory-service
               uri: ${INVENTORY_SERVICE_URI:http://localhost:8083}
               predicates:
-                - Path=/api/v1/products/**
+                - Path=/api/v1/products/**,/api/v1/inventory/**
               filters:
+                # Inventory's existing public controller uses /api/v1/products.
+                # The Phase 4 inventory path is an alias; existing product URLs stay valid.
+                - name: RewritePath
+                  args:
+                    regexp: ^/api/v1/inventory(?=/|$)
+                    replacement: /api/v1/products
                 - name: CircuitBreaker
                   args:
                     name: inventoryGateway

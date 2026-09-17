@@ -14,13 +14,14 @@
   <description>Production Grade Backend Platform (Monorepo Parent)</description>
 
   <properties>
-    <java.version>17</java.version>
+    <java.version>25</java.version>
     <!-- This parent is not spring-boot-starter-parent, so java.version alone is inert:
          maven.compiler.release is what actually drives javac. -->
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <spring-boot.version>3.5.10</spring-boot.version>
     <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <lombok.version>1.18.48</lombok.version>
     <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
   </properties>
 
@@ -49,6 +50,7 @@
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -78,16 +80,17 @@
 
   <modules>
     <module>libs/common-observability</module>
+    <module>libs/common-security</module>
     <module>services/auth-service</module>
     <module>services/orders-service</module>
     <module>services/inventory-service</module>
     <module>services/payments-service</module>
     <module>services/edge-gateway</module>
     <module>services/worker</module>
+    <module>services/engineering-agent</module>
 
     <!-- Optional shared libs -->
     <!-- <module>libs/common-web</module> -->
-    <!-- <module>libs/common-security</module> -->
   </modules>
 
   <build>
@@ -107,6 +110,9 @@
                  this; without it Spring MVC cannot infer @PathVariable/@RequestParam names and
                  every such handler fails at runtime. -->
             <parameters>true</parameters>
+            <!-- JDK 23+ no longer runs discovered annotation processors implicitly. The entities
+                 use Lombok, so Java 25 builds must opt in to annotation processing. -->
+            <proc>full</proc>
           </configuration>
         </plugin>
       </plugins>

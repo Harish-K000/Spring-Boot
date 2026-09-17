@@ -10,12 +10,13 @@ import org.springframework.context.annotation.Bean;
 public class PlatformObservabilityAutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean(name = "requestIdRestClientCustomizer")
-    RestClientCustomizer requestIdRestClientCustomizer() {
+    @ConditionalOnMissingBean(name = "correlationIdRestClientCustomizer")
+    RestClientCustomizer correlationIdRestClientCustomizer() {
         return builder -> builder.requestInterceptor((request, body, execution) -> {
-            String requestId = MDC.get(RequestCorrelationFilter.REQUEST_ID_MDC_KEY);
-            if (requestId != null) {
-                request.getHeaders().set(RequestCorrelationFilter.REQUEST_ID_HEADER, requestId);
+            String correlationId = MDC.get(CorrelationIds.MDC_KEY);
+            if (correlationId != null) {
+                request.getHeaders().remove(CorrelationIds.LEGACY_HEADER);
+                request.getHeaders().set(CorrelationIds.HEADER, correlationId);
             }
             return execution.execute(request, body);
         });
