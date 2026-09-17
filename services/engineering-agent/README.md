@@ -234,7 +234,8 @@ Run the optional real-model tests with Ollama running:
 
 ```sh
 AGENT_LIVE_OLLAMA_TEST=true JAVA_HOME=/opt/homebrew/opt/openjdk@25 \
-  ./mvnw -pl services/engineering-agent test -Dtest=OllamaLiveTest
+  ./mvnw -pl services/engineering-agent test -Dtest=OllamaLiveTest \
+  -Dagent.test.excluded-groups=
 ```
 
 The live tests check a real model response and verify that the model actually
@@ -861,7 +862,8 @@ from the repository root with Ollama and the configured model running:
 ```sh
 AGENT_LIVE_EVAL=true JAVA_HOME=/opt/homebrew/opt/openjdk@25 \
   ./mvnw -B -ntp -pl services/engineering-agent -am test \
-  -Dtest=AgentEvaluationLiveTest -Dsurefire.failIfNoSpecifiedTests=false
+  -Dtest=AgentEvaluationLiveTest -Dagent.test.excluded-groups= \
+  -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 The run writes `services/engineering-agent/target/evaluation-report.json`.
@@ -880,7 +882,8 @@ the unsafe SQL fixture and the clean email fixture:
 ```sh
 AGENT_LIVE_SCANNER_EVAL=true JAVA_HOME=/opt/homebrew/opt/openjdk@25 \
   ./mvnw -B -ntp -pl services/engineering-agent -am test \
-  -Dtest=SemgrepEvaluationLiveTest -Dsurefire.failIfNoSpecifiedTests=false
+  -Dtest=SemgrepEvaluationLiveTest -Dagent.test.excluded-groups= \
+  -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 This optional test uses the production rule file but calls Semgrep directly on
@@ -936,8 +939,30 @@ changed files, diff and source read succeeded; build and tests passed; scanners
 returned findings; model analysis was available. A chat request also returned
 200 and used the remote changed-file result. Model prose still needs human
 verification against the structured tool fields.
-The final regular suite ran 138 tests: 132 passed and six opt-in live checks
-were skipped. A server-down request returned 503 with no local tool fallback.
+The regular suite excludes the six `live`-tagged Ollama and scanner checks, so
+normal test evidence contains no intentional skips. Select those checks explicitly
+with the documented environment flag and `-Dagent.test.excluded-groups=`. A
+server-down request returned 503 with no local tool fallback.
+
+## Phase 5: GitHub pull-request gate
+
+The `Engineering Agent Review` workflow runs this two-process agent on an ephemeral
+GitHub-hosted runner for each non-draft pull request to `main`. It checks the exact
+base-to-head commit range, reviews each directly changed registered service and
+conservatively reviews every registered service when an approved shared path changes.
+It returns a required PASS/BLOCKED status. The workflow has read-only repository
+permission and no secrets.
+
+`scripts/ci_review_gate.py` is the headless client. It accepts no tool or shell
+command from the pull request, validates the review audit against the PR head and
+blocks on incomplete Git evidence, compile/test problems, skipped tests, any
+scanner match, unavailable model review or accepted model finding. Its artifact
+contains only statuses and counts; action tokens, code, diffs, prompts, model prose
+and raw diagnostics are omitted. Policy tests live in
+`scripts/test_ci_review_gate.py` and also run in the ordinary backend workflow.
+
+See `docs/phase-5-github-agent-integration.md` for the complete step-by-step flow,
+trust boundary, file responsibilities and local commands.
 
 ## Phase 3 acceptance check
 

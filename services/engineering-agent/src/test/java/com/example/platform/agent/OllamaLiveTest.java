@@ -5,6 +5,7 @@ import com.example.platform.agent.tool.GitDiffReader;
 import com.example.platform.agent.tool.SourceFileReader;
 import com.example.platform.agent.tool.ChangedFilesReader;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.ai.chat.model.ChatModel;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.verify;
 /** Opt-in verification against a running local Ollama instance and a real model. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("test")
+@Tag("live")
 @EnabledIfEnvironmentVariable(named = "AGENT_LIVE_OLLAMA_TEST", matches = "true")
 class OllamaLiveTest {
     @Autowired private ChatModel chatModel;

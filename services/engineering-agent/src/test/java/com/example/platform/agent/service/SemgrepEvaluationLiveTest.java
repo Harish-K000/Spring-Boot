@@ -3,6 +3,7 @@ package com.example.platform.agent.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Opt-in real Semgrep rule check on safe fixture text; no application scanner or OSV call. */
+@Tag("live")
 @EnabledIfEnvironmentVariable(named = "AGENT_LIVE_SCANNER_EVAL", matches = "true")
 class SemgrepEvaluationLiveTest {
     private static final ObjectMapper JSON = new ObjectMapper();
