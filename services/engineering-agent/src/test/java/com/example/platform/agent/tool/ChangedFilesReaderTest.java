@@ -124,6 +124,34 @@ class ChangedFilesReaderTest {
     }
 
     @Test
+    void listsCommittedPullRequestChangesFromConfiguredBaseOnACleanTree() throws Exception {
+        String base = gitOutput("rev-parse", "HEAD").trim();
+        write("services/auth-service/Example.java", "class Example { int value = 9; }\n");
+        write("services/orders-service/New.java", "class New {}\n");
+        git(0, "add", ".");
+        git(0, "commit", "-qm", "feature changes");
+
+        var result = new ChangedFilesReader(new RepositoryGit(repository.toString(), base)).read();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.files()).containsExactly(
+                new ChangedFilesReader.ChangedFile("services/auth-service/Example.java", MODIFIED, UNCHANGED, false, "auth-service"),
+                new ChangedFilesReader.ChangedFile("services/orders-service/New.java", ADDED, UNCHANGED, false, "orders-service"));
+        assertThat(result.changedServices()).containsExactly("auth-service", "orders-service");
+        assertThat(result.scope()).contains("pull-request base commit and HEAD");
+        assertThat(gitOutput("status", "--porcelain=v1")).isEmpty();
+    }
+
+    @Test
+    void failsClosedForMissingOrMalformedPullRequestBase() {
+        assertThat(new ChangedFilesReader(new RepositoryGit(repository.toString(), "a".repeat(40))).read().status())
+                .isEqualTo("ERROR");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new RepositoryGit(repository.toString(), "HEAD;touch-pwned"))
+                .withMessageContaining("full Git commit hash");
+    }
+
+    @Test
     void disablesGitHelpersAndLeavesTheIndexAndConfigurationUnchanged() throws Exception {
         write("services/auth-service/Example.java", "class Changed {}\n");
         write(".gitattributes", "*.java filter=custom\n");
@@ -162,5 +190,15 @@ class ChangedFilesReaderTest {
         assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
         String output = new String(process.getInputStream().readAllBytes());
         assertThat(process.exitValue()).as(output).isEqualTo(expectedExit);
+    }
+
+    private String gitOutput(String... args) throws Exception {
+        var command = new ArrayList<>(List.of("git", "-c", "core.hooksPath=/dev/null", "-C", repository.toString()));
+        command.addAll(List.of(args));
+        var process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
+        String output = new String(process.getInputStream().readAllBytes());
+        assertThat(process.exitValue()).as(output).isZero();
+        return output;
     }
 }

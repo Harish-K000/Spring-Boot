@@ -20,7 +20,7 @@ public class ChangedFilesTool {
     }
 
     @Tool(description = "List changed Java, SQL and Maven POM paths, Git statuses and directly changed services. "
-            + "Includes staged, unstaged, deleted and non-ignored untracked files. No file contents. "
+            + "Uses the configured PR base-to-HEAD comparison when present; otherwise includes staged, unstaged, deleted and non-ignored untracked files. No file contents. "
             + "No arguments; call at most once per request. Respect exclusions and truncation. "
             + "Use getGitDiff separately when you need tracked code changes.")
     public ChangedFilesReader.ChangedFilesResult getChangedFiles() {

@@ -32,8 +32,9 @@ pull request. The automated review therefore runs on a fresh GitHub-hosted `ubun
 The review job will:
 
 1. Check out the exact pull-request revision.
-2. Reconstruct the PR as an uncommitted diff from the trusted base SHA to the head SHA. This lets
-   the current bounded Git tools inspect committed PR changes without changing their safety model.
+2. Pass the trusted base commit SHA as startup configuration and check out the exact head SHA. The
+   bounded Git tools compare that base to `HEAD` directly; the model and HTTP request cannot choose
+   revisions.
 3. Set up Java 25 and the Maven dependency cache.
 4. Install pinned versions of Ollama, Semgrep, Gitleaks, and OSV-Scanner.
 5. Pull the configured small Ollama model, then disable cloud inference.
@@ -99,7 +100,7 @@ both gates again.
 ```text
 5.1  Execution and trust boundary
               ↓
-5.2  PR-aware Git evidence
+5.2  PR-aware Git evidence (implemented)
               ↓
 5.3  Headless review command and exit policy
               ↓

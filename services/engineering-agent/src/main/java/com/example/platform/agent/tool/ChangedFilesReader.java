@@ -21,6 +21,10 @@ public class ChangedFilesReader {
             + "Includes staged, unstaged and non-ignored untracked files. Sensitive, hidden and generated paths are excluded. "
             + "Renames are shown as deletion plus addition. No file contents are returned by this tool. "
             + "Services are mapped from returned paths, not a complete dependency-impact analysis.";
+    private static final String COMPARISON_SCOPE = "Committed paths changed between the configured pull-request base commit and HEAD "
+            + "for approved Java, SQL and pom.xml files. Sensitive, hidden and generated paths are excluded. "
+            + "Renames are shown as deletion plus addition. No file contents are returned by this tool. "
+            + "Services are mapped from returned paths, not a complete dependency-impact analysis.";
     private final RepositoryGit git;
 
     public ChangedFilesReader(RepositoryGit git) {
@@ -40,7 +44,9 @@ public class ChangedFilesReader {
             RepositoryGit.Output output = git.changedFiles(MAX_BYTES);
             if (output.timedOut()) return failure("TIMEOUT", null, start, "Git file listing timed out.");
             if (output.exitCode() != 0) return failure("ERROR", output.exitCode(), start, "Git file listing failed.");
-            return parse(output.text(), output.truncated(), start);
+            return git.comparesCommittedChanges()
+                    ? parseComparison(output.text(), output.truncated(), start)
+                    : parse(output.text(), output.truncated(), start);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             return failure("ERROR", null, start, "Git file listing was interrupted.");
@@ -78,8 +84,50 @@ public class ChangedFilesReader {
             boolean conflicted = xy.indexOf('U') >= 0 || xy.equals("AA") || xy.equals("DD");
             files.add(new ChangedFile(path, status(record.charAt(0)), status(record.charAt(1)), conflicted, service));
         }
+        return success(files, services, shared, truncated, start, SCOPE);
+    }
+
+    static ChangedFilesResult parseComparison(String output, boolean truncated, long start) throws IOException {
+        var files = new ArrayList<ChangedFile>();
+        var services = new TreeSet<String>();
+        boolean shared = false;
+        int offset = 0;
+        while (offset < output.length()) {
+            int statusEnd = output.indexOf('\0', offset);
+            if (statusEnd == -1) {
+                if (!truncated) throw new IOException("Incomplete Git comparison status");
+                break;
+            }
+            String statusText = output.substring(offset, statusEnd);
+            offset = statusEnd + 1;
+            int pathEnd = output.indexOf('\0', offset);
+            if (pathEnd == -1) {
+                if (!truncated) throw new IOException("Incomplete Git comparison path");
+                break;
+            }
+            if (files.size() == MAX_FILES) {
+                truncated = true;
+                break;
+            }
+            if (statusText.length() != 1) throw new IOException("Unexpected Git comparison status");
+            String path = output.substring(offset, pathEnd);
+            offset = pathEnd + 1;
+            String[] parts = path.split("/", 3);
+            String service = parts.length == 3 && parts[0].equals("services") && SERVICES.contains(parts[1])
+                    ? parts[1] : null;
+            if (service != null) services.add(service);
+            else shared = true;
+            ChangeStatus status = status(statusText.charAt(0));
+            files.add(new ChangedFile(path, status, ChangeStatus.UNCHANGED,
+                    status == ChangeStatus.UNMERGED, service));
+        }
+        return success(files, services, shared, truncated, start, COMPARISON_SCOPE);
+    }
+
+    private static ChangedFilesResult success(List<ChangedFile> files, Set<String> services,
+                                              boolean shared, boolean truncated, long start, String scope) {
         return new ChangedFilesResult("SUCCESS", 0, (System.nanoTime() - start) / 1_000_000,
-                List.copyOf(files), List.copyOf(services), shared, truncated, SCOPE,
+                List.copyOf(files), List.copyOf(services), shared, truncated, scope,
                 truncated ? "File list and service mapping are incomplete."
                         : files.isEmpty() ? "No changed files within the approved scope."
                         : "Changed paths collected; contents were not provided and builds/tests were not run.");
@@ -98,8 +146,9 @@ public class ChangedFilesReader {
         };
     }
 
-    private static ChangedFilesResult failure(String status, Integer exitCode, long start, String message) {
+    private ChangedFilesResult failure(String status, Integer exitCode, long start, String message) {
         return new ChangedFilesResult(status, exitCode, (System.nanoTime() - start) / 1_000_000,
-                List.of(), List.of(), false, false, SCOPE, message);
+                List.of(), List.of(), false, false,
+                git.comparesCommittedChanges() ? COMPARISON_SCOPE : SCOPE, message);
     }
 }

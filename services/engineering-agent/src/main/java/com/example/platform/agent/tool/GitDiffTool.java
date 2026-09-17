@@ -19,7 +19,7 @@ public class GitDiffTool {
         this.budget = budget;
     }
 
-    @Tool(description = "Inspect current tracked Java, SQL and Maven POM changes against HEAD, including staged and unstaged edits. "
+    @Tool(description = "Inspect tracked Java, SQL and Maven POM changes for the configured PR base-to-HEAD comparison, or local changes against HEAD. "
             + "No arguments. Call once per request. Returns status, diff, truncation and redaction indicators. "
             + "Untracked files, configuration and sensitive paths are excluded. This does not build or test code.")
     public GitDiffReader.GitDiffResult getGitDiff() {

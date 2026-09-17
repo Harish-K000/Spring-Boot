@@ -68,6 +68,9 @@ agent:
     mode: mcp
   # Empty discovers the nearest Git root from the application's working directory.
   repository: ${AGENT_REPOSITORY:}
+  review:
+    # CI supplies a full PR base commit hash. Empty preserves local working-tree review behavior.
+    base-commit: ${AGENT_REVIEW_BASE_COMMIT:}
   build:
     # Empty uses the JDK that launched this service; override only when needed.
     java-home: ${AGENT_BUILD_JAVA_HOME:}
