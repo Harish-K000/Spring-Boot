@@ -119,6 +119,21 @@ class GitDiffReaderTest {
     }
 
     @Test
+    void readsCommittedPullRequestDiffFromConfiguredBaseOnACleanTree() throws Exception {
+        String base = git("rev-parse", "HEAD").trim();
+        write("Example.java", "class Example { int pullRequest = 7; }\n");
+        git("add", "Example.java");
+        git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "feature edit");
+
+        var result = new GitDiffReader(new RepositoryGit(repository.toString(), base)).read();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.diff()).contains("+class Example { int pullRequest = 7; }");
+        assertThat(result.message()).contains(base + "...HEAD");
+        assertThat(git("status", "--porcelain=v1")).isEmpty();
+    }
+
+    @Test
     void allowsOnlyOneToolCallPerRequest() {
         var tool = new GitDiffTool(reader);
         assertThat(tool.getGitDiff().status()).isEqualTo("SUCCESS");

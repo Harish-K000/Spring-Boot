@@ -1,6 +1,7 @@
 package com.example.platform.agent.tool;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Profile;
 
@@ -20,6 +21,7 @@ import java.util.regex.Pattern;
 @Profile({"mcp-server", "test"})
 public class RepositoryGit {
     private static final Pattern FILTER_KEY = Pattern.compile("filter\\.[a-zA-Z0-9._/-]+\\.(clean|smudge|process|required)");
+    private static final Pattern COMMIT_HASH = Pattern.compile("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}");
     private static final List<String> APPROVED_PATHS = List.of(
             ":(glob)**/*.java", ":(glob)**/*.sql", ":(glob)**/pom.xml",
             ":(exclude,glob)**/.*", ":(exclude,glob)**/.*/**",
@@ -27,14 +29,26 @@ public class RepositoryGit {
             ":(exclude,icase,glob)**/*secret*", ":(exclude,icase,glob)**/*secret*/**",
             ":(exclude,icase,glob)**/*credential*", ":(exclude,icase,glob)**/*credential*/**");
     private final Path repository;
+    private final String baseCommit;
 
-    public RepositoryGit(@Value("${agent.repository:}") String configuredRepository) {
+    @Autowired
+    public RepositoryGit(@Value("${agent.repository:}") String configuredRepository,
+                         @Value("${agent.review.base-commit:}") String configuredBaseCommit) {
         Path candidate = Path.of(configuredRepository.isBlank() ? "." : configuredRepository).toAbsolutePath().normalize();
         if (configuredRepository.isBlank()) {
             while (candidate != null && !Files.exists(candidate.resolve(".git"))) candidate = candidate.getParent();
         }
         // A wrong path becomes a structured tool error; ordinary chat can still start.
         this.repository = candidate;
+        String requestedBase = configuredBaseCommit == null ? "" : configuredBaseCommit.trim();
+        if (!requestedBase.isEmpty() && !COMMIT_HASH.matcher(requestedBase).matches()) {
+            throw new IllegalArgumentException("agent.review.base-commit must be a full Git commit hash");
+        }
+        this.baseCommit = requestedBase.toLowerCase();
+    }
+
+    public RepositoryGit(String configuredRepository) {
+        this(configuredRepository, "");
     }
 
     record Output(int exitCode, boolean timedOut, boolean truncated, String text) {}
@@ -63,12 +77,29 @@ public class RepositoryGit {
 
     Output diff(int limit) throws IOException, InterruptedException, ExecutionException, TimeoutException {
         return run(List.of("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color",
-                "--ignore-submodules=all", "--unified=3", "HEAD", "--"), limit);
+                "--ignore-submodules=all", "--unified=3", comparison(), "--"), limit);
     }
 
     Output changedFiles(int limit) throws IOException, InterruptedException, ExecutionException, TimeoutException {
+        if (!baseCommit.isEmpty()) {
+            return run(List.of("diff", "--name-status", "-z", "--no-renames",
+                    "--ignore-submodules=all", comparison(), "--"), limit);
+        }
         return run(List.of("status", "--porcelain=v1", "-z", "--untracked-files=all",
                 "--no-renames", "--ignore-submodules=all", "--"), limit);
+    }
+
+    boolean comparesCommittedChanges() {
+        return !baseCommit.isEmpty();
+    }
+
+    String comparisonDescription() {
+        return baseCommit.isEmpty() ? "working tree and index against HEAD"
+                : "committed pull-request changes from " + baseCommit + "...HEAD";
+    }
+
+    private String comparison() {
+        return baseCommit.isEmpty() ? "HEAD" : baseCommit + "...HEAD";
     }
 
     private Output run(List<String> operation, int limit)

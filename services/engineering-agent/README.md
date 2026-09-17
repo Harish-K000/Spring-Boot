@@ -204,6 +204,13 @@ directory. To start from elsewhere, set `AGENT_REPOSITORY` to the absolute Git r
 The model cannot change this value. A missing repository or missing `HEAD` commit
 produces an `ERROR` result rather than an empty successful diff.
 
+For a pull-request checkout, set `AGENT_REVIEW_BASE_COMMIT` to the full 40- or
+64-character base commit hash. Both Git readers then inspect committed changes from
+that base to `HEAD` using three-dot comparison semantics. The value is startup
+configuration rather than a model or HTTP argument. Malformed values stop application
+startup, and a well-formed hash that is absent from the checkout returns structured
+`ERROR` evidence. Leave it empty for the normal local working-tree behavior.
+
 ### Try the tool
 
 ```sh
@@ -245,10 +252,18 @@ getGitDiff()      → tracked code changes
 ```
 
 Both use `RepositoryGit`, which centralizes the fixed commands, path filters,
-restricted environment, disabled Git helpers and execution limits. The new command is:
+restricted environment, disabled Git helpers and execution limits. Local mode uses:
 
 ```sh
 git status --porcelain=v1 -z --untracked-files=all --no-renames --ignore-submodules=all -- <approved paths>
+```
+
+PR mode uses the configured full commit hash and a fixed `HEAD` target:
+
+```sh
+git diff --name-status -z --no-renames --ignore-submodules=all <base>...HEAD -- <approved paths>
+git diff --no-ext-diff --no-textconv --no-renames --no-color \
+  --ignore-submodules=all --unified=3 <base>...HEAD -- <approved paths>
 ```
 
 `--porcelain=v1` provides a stable format for Java to parse. `-z` separates records
@@ -272,6 +287,8 @@ An illustrative file entry:
 - **indexStatus** describes the staged change relative to `HEAD`.
 - **workTreeStatus** describes the working-tree change relative to the index.
 - Both statuses are `UNTRACKED` for a new file not yet staged.
+- In PR mode, `indexStatus` contains the committed base-to-HEAD status and
+  `workTreeStatus` is `UNCHANGED` because no index/work-tree state is being described.
 - `conflicted` flags unresolved merge conflicts.
 - `service` comes from a known `services/<name>/...` path. Other paths have `null`.
 - `changedServices` contains the sorted, unique services present in returned entries.
@@ -290,9 +307,10 @@ The result contains at most 100 entries and captures at most 12,000 bytes from G
 filename at the byte boundary is discarded. A Git error returns `ERROR`, not a
 successful empty list. Git status also works before a repository's first commit.
 
-These two tool calls inspect the current working tree at their execution times;
-they are not yet an immutable review snapshot. A listed file has not necessarily
-had its contents inspected by the model.
+In local mode these two calls inspect the current working tree at their execution
+times. In PR mode they inspect the committed base-to-HEAD comparison, provided the
+workflow checks out the expected head commit. A listed file has not necessarily had
+its contents inspected by the model.
 
 ### Try it
 

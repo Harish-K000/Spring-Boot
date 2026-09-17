@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 @Profile({"mcp-server", "test"})
 public class GitDiffReader {
     static final int MAX_BYTES = 12_000;
-    private static final String SCOPE = "Tracked Java, SQL and pom.xml changes against HEAD (staged + unstaged). "
+    private static final String SCOPE = "Tracked Java, SQL and pom.xml changes from the configured Git comparison. "
             + "Untracked files, configuration and sensitive paths are excluded. "
             + "Known secret patterns are redacted; this is not a complete secret scanner.";
     private static final Pattern PRIVATE_KEY = Pattern.compile("(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|$)");
@@ -37,7 +37,8 @@ public class GitDiffReader {
             String safe = redact(output.text());
             return result("SUCCESS", 0, started, safe, output.truncated(), !safe.equals(output.text()),
                     output.truncated() ? "Diff is truncated; inspection is incomplete."
-                            : safe.isBlank() ? "No changes within the tool's tracked-file scope." : "Diff collected; no build or tests were run.");
+                            : safe.isBlank() ? "No changes within the tool's tracked-file scope."
+                            : "Diff collected for " + git.comparisonDescription() + "; no build or tests were run.");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             return result("ERROR", null, started, "", false, false, "Git inspection was interrupted.");

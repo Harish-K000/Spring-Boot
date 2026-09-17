@@ -38,10 +38,10 @@ public class EngineeringMcpTools {
             this.build = build; this.tests = tests; this.security = security; this.git = git;
         }
 
-        @Tool(description = "List approved changed repository paths and statuses; no file contents.")
+        @Tool(description = "List approved changed repository paths and statuses for the configured Git comparison; no file contents.")
         public ChangedFilesReader.ChangedFilesResult getChangedFiles() { return files.read(); }
 
-        @Tool(description = "Read bounded, redacted tracked Git diff from the approved repository scope.")
+        @Tool(description = "Read the bounded, redacted tracked diff for the configured Git comparison.")
         public GitDiffReader.GitDiffResult getGitDiff() { return diff.read(); }
 
         @Tool(description = "Read one approved repository-relative Java, SQL or pom.xml source path.")
