@@ -319,6 +319,53 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@25 ./mvnw -pl tests/platform-e2e -am test \
 See [`tests/platform-e2e/README.md`](../../tests/platform-e2e/README.md) for the test setup and
 file layout.
 
+## 4.16 AI/MCP engineering-agent review
+
+The local Spring AI agent and the `backend-engineering-tools` MCP server reviewed the Phase 4
+gateway changes at commit `500bc7e`. Because the feature work had already been committed and the
+agent deliberately inspects working-tree changes against `HEAD`, the review used an isolated
+worktree based on the pre-Phase-4 commit. The gateway patch, current parent POM, and end-to-end
+module were applied there without changing the feature branch.
+
+The final structured evidence was:
+
+| Check | Result |
+| --- | --- |
+| Changed files | `SUCCESS`; 25 approved paths; complete inventory |
+| Bounded Git diff | `SUCCESS`; redacted and truncated at the configured limit |
+| Gateway compile | `PASS`; exit code 0 |
+| Gateway tests | `PASS`; 57 passed, 0 failed, 0 errors, 0 skipped |
+| Semgrep starter rules | `PASS`; 0 matches |
+| Gitleaks current-file scan | `PASS`; 0 matches |
+| OSV dependency scan | `PASS`; 0 matches across 183 resolved packages |
+| Local Ollama analysis | `AVAILABLE`; 0 accepted findings |
+
+The model proposed three findings, but the agent discarded all three because their quoted line
+evidence did not satisfy the deterministic source/diff validator. This is expected safety
+behavior: unsupported model claims do not become review findings.
+
+The generated report was `WARN`, with `risk=UNASSESSED`, because the Git preview was truncated,
+the parent POM is a shared change, and only one untracked source file is included in the model
+preview. These are evidence-coverage warnings rather than failed checks. The local approval
+workflow recorded `APPROVED` after the bounded-preview limitations were reviewed. Its
+`reviewerIdentityStatus` is `NOT_AUTHENTICATED`, as expected for the V1 local token workflow.
+
+An earlier scan against the old pre-Phase-4 parent versions reported dependency advisories. That
+result did not represent the merge candidate. Repeating the scan with the feature branch's Spring
+Boot 3.5.16 and Spring Cloud 2025.0.3 dependency management produced the final zero-finding result
+above.
+
+For future changes, run the review before committing so the normal working tree contains the diff:
+
+```sh
+curl --max-time 600 http://127.0.0.1:8090/api/agent/review \
+  -H 'Content-Type: application/json' \
+  -d '{"service":"edge-gateway"}'
+```
+
+Read the structured `build`, `tests`, `security`, `report`, and `approval` fields as evidence. The
+model's `analysis` field is advisory and cannot override those results.
+
 ## Dependency security review
 
 The platform parent manages Spring Boot 3.5.16 and Spring Cloud 2025.0.3. It also imports explicit
