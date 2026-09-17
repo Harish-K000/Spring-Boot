@@ -29,8 +29,10 @@ class JwtUtilTest {
     @Test
     void rejectsTamperedSignature() {
         String token = jwtUtil.generateToken("user-123", "user@example.com", "USER", 60);
-        char replacement = token.charAt(token.length() - 1) == 'A' ? 'B' : 'A';
-        String tampered = token.substring(0, token.length() - 1) + replacement;
+        int signatureStart = token.lastIndexOf('.') + 1;
+        char replacement = token.charAt(signatureStart) == 'A' ? 'B' : 'A';
+        String tampered = token.substring(0, signatureStart) + replacement
+                + token.substring(signatureStart + 1);
 
         assertThatThrownBy(() -> jwtUtil.validateAndGetClaims(tampered))
                 .isInstanceOf(IllegalArgumentException.class)

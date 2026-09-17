@@ -84,6 +84,11 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!-- Keep the normal JAR available to the platform E2E module and attach the
+					     executable Spring Boot archive as a separate artifact. -->
+					<classifier>exec</classifier>
+				</configuration>
 				<executions>
 					<execution>
 						<goals>

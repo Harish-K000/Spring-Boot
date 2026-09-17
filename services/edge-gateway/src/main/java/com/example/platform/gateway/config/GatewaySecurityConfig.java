@@ -1,13 +1,12 @@
 package com.example.platform.gateway.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.platform.gateway.error.GatewayErrorResponseWriter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -24,14 +23,12 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import reactor.core.publisher.Mono;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.List;
 
 /** Central authentication boundary for every externally routed service API. */
 @Configuration
@@ -42,10 +39,10 @@ public class GatewaySecurityConfig {
     public static final String TOKEN_ISSUER = "backend-platform-auth";
     public static final String TOKEN_AUDIENCE = "backend-platform-api";
 
-    private final ObjectMapper objectMapper;
+    private final GatewayErrorResponseWriter errorWriter;
 
-    public GatewaySecurityConfig(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public GatewaySecurityConfig(GatewayErrorResponseWriter errorWriter) {
+        this.errorWriter = errorWriter;
     }
 
     @Bean
@@ -97,8 +94,10 @@ public class GatewaySecurityConfig {
     @Bean
     public SecurityWebFilterChain springSecurityFilterChain(
             ServerHttpSecurity http,
-            Converter<Jwt, Mono<AbstractAuthenticationToken>> jwtAuthenticationConverter) {
+            Converter<Jwt, Mono<AbstractAuthenticationToken>> jwtAuthenticationConverter,
+            CorsConfigurationSource gatewayCorsConfigurationSource) {
         return http
+                .cors(cors -> cors.configurationSource(gatewayCorsConfigurationSource))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
@@ -118,40 +117,17 @@ public class GatewaySecurityConfig {
                                 "/api/v1/inventory/**", "/actuator/**").hasRole("ADMIN")
                         .anyExchange().authenticated())
                 .exceptionHandling(handling -> handling
-                        .authenticationEntryPoint((exchange, exception) -> writeError(
-                                exchange, HttpStatus.UNAUTHORIZED, "Authentication required"))
-                        .accessDeniedHandler((exchange, exception) -> writeError(
-                                exchange, HttpStatus.FORBIDDEN, "Access denied")))
+                        .authenticationEntryPoint((exchange, exception) -> errorWriter.write(
+                                exchange, HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED",
+                                "Authentication is required."))
+                        .accessDeniedHandler((exchange, exception) -> errorWriter.write(
+                                exchange, HttpStatus.FORBIDDEN, "ACCESS_DENIED",
+                                "You do not have permission to access this resource.")))
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
-                        .authenticationEntryPoint((exchange, exception) -> writeError(
-                                exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired access token")))
+                        .authenticationEntryPoint((exchange, exception) -> errorWriter.write(
+                                exchange, HttpStatus.UNAUTHORIZED, "INVALID_ACCESS_TOKEN",
+                                "The access token is invalid or expired.")))
                 .build();
-    }
-
-    private Mono<Void> writeError(ServerWebExchange exchange, HttpStatus status, String message) {
-        GatewayError error = new GatewayError(
-                Instant.now(), status.value(), status.getReasonPhrase(), message,
-                exchange.getRequest().getPath().value(), List.of());
-        byte[] body;
-        try {
-            body = objectMapper.writeValueAsBytes(error);
-        } catch (Exception ex) {
-            return Mono.error(ex);
-        }
-
-        exchange.getResponse().setStatusCode(status);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        return exchange.getResponse().writeWith(Mono.just(
-                exchange.getResponse().bufferFactory().wrap(body)));
-    }
-
-    private record GatewayError(
-            Instant timestamp,
-            int status,
-            String error,
-            String message,
-            String path,
-            List<?> fieldErrors) {
     }
 }

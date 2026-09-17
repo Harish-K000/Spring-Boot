@@ -19,8 +19,14 @@
          maven.compiler.release is what actually drives javac. -->
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <spring-boot.version>3.5.10</spring-boot.version>
-    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <spring-boot.version>3.5.16</spring-boot.version>
+    <spring-cloud.version>2025.0.3</spring-cloud.version>
+    <!-- Security patch overrides newer than the final Spring Boot 3.5 OSS BOM. -->
+    <netty.version>4.1.138.Final</netty.version>
+    <bouncycastle.version>1.84</bouncycastle.version>
+    <jackson-bom.version>2.21.5</jackson-bom.version>
+    <log4j2-bom.version>2.25.5</log4j2-bom.version>
+    <opentelemetry-bom.version>1.62.0</opentelemetry-bom.version>
     <lombok.version>1.18.48</lombok.version>
     <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
   </properties>
@@ -28,6 +34,39 @@
   <!-- Centralized dependency versions for all modules (services/libs) -->
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-bom</artifactId>
+        <version>${netty.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>${jackson-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-bom</artifactId>
+        <version>${log4j2-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-bom</artifactId>
+        <version>${opentelemetry-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
@@ -88,6 +127,7 @@
     <module>services/edge-gateway</module>
     <module>services/worker</module>
     <module>services/engineering-agent</module>
+    <module>tests/platform-e2e</module>
 
     <!-- Optional shared libs -->
     <!-- <module>libs/common-web</module> -->

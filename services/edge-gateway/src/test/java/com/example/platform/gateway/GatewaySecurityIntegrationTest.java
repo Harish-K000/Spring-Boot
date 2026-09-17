@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -37,6 +39,7 @@ class GatewaySecurityIntegrationTest {
 
     private static final String SECRET = "gateway-test-secret-with-at-least-32-bytes";
 
+    @LocalServerPort private int port;
     @Autowired private WebTestClient webTestClient;
 
     @Test
@@ -47,16 +50,71 @@ class GatewaySecurityIntegrationTest {
     }
 
     @Test
+    void allowsConfiguredBrowserPreflightBeforeAuthentication() {
+        webTestClient.options().uri(gatewayUrl("/api/v1/orders/checkout"))
+                .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.POST.name())
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS,
+                        "authorization,content-type,x-correlation-id")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
+                .expectHeader().valueEquals(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS,
+                        value -> org.assertj.core.api.Assertions.assertThat(value)
+                                .contains(HttpMethod.POST.name()))
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,
+                        value -> org.assertj.core.api.Assertions.assertThat(value.toLowerCase())
+                                .contains("authorization", "content-type", "x-correlation-id"))
+                .expectHeader().exists(CorrelationIds.HEADER);
+    }
+
+    @Test
+    void rejectsBrowserPreflightFromUnconfiguredOrigin() {
+        webTestClient.options().uri(gatewayUrl("/api/v1/orders/checkout"))
+                .header(HttpHeaders.ORIGIN, "https://attacker.example")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.POST.name())
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectHeader().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
+    }
+
+    @Test
+    void exposesCorrelationIdToConfiguredBrowserOrigin() {
+        webTestClient.post().uri(gatewayUrl("/api/v1/auth/login"))
+                .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                .header(CorrelationIds.HEADER, "browser-request-123")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectHeader().valueEquals(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                        value -> org.assertj.core.api.Assertions.assertThat(value)
+                                .contains(CorrelationIds.HEADER));
+    }
+
+    private String gatewayUrl(String path) {
+        return "http://127.0.0.1:" + port + path;
+    }
+
+    @Test
     void protectedRequestWithoutTokenReturnsUniform401() {
         webTestClient.get().uri("/__test/principal")
+                .header(CorrelationIds.HEADER, "security-test-401")
                 .exchange()
                 .expectStatus().isUnauthorized()
-                .expectHeader().exists(CorrelationIds.HEADER)
+                .expectHeader().valueEquals(CorrelationIds.HEADER, "security-test-401")
                 .expectHeader().contentType("application/json")
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(401)
-                .jsonPath("$.message").isEqualTo("Authentication required")
-                .jsonPath("$.path").isEqualTo("/__test/principal");
+                .jsonPath("$.code").isEqualTo("AUTHENTICATION_REQUIRED")
+                .jsonPath("$.message").isEqualTo("Authentication is required.")
+                .jsonPath("$.path").isEqualTo("/__test/principal")
+                .jsonPath("$.correlationId").isEqualTo("security-test-401")
+                .jsonPath("$.timestamp").exists();
     }
 
     @Test
@@ -66,7 +124,8 @@ class GatewaySecurityIntegrationTest {
                 .exchange()
                 .expectStatus().isUnauthorized()
                 .expectBody()
-                .jsonPath("$.message").isEqualTo("Invalid or expired access token");
+                .jsonPath("$.code").isEqualTo("INVALID_ACCESS_TOKEN")
+                .jsonPath("$.message").isEqualTo("The access token is invalid or expired.");
     }
 
     @Test
@@ -140,8 +199,10 @@ class GatewaySecurityIntegrationTest {
     @Test
     void tamperedSignedTokenIsRejected() throws Exception {
         String issued = token(Instant.now().plusSeconds(60));
-        char replacement = issued.charAt(issued.length() - 1) == 'A' ? 'B' : 'A';
-        String tampered = issued.substring(0, issued.length() - 1) + replacement;
+        int signatureStart = issued.lastIndexOf('.') + 1;
+        char replacement = issued.charAt(signatureStart) == 'A' ? 'B' : 'A';
+        String tampered = issued.substring(0, signatureStart) + replacement
+                + issued.substring(signatureStart + 1);
         webTestClient.get().uri("/__test/principal")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tampered)
                 .exchange()
@@ -166,6 +227,23 @@ class GatewaySecurityIntegrationTest {
         webTestClient.get().uri("/api/v1/auth/login")
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void authenticatedUnknownRouteReturnsStandard404() throws Exception {
+        webTestClient.get().uri("/api/v1/not-routed")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + token(Instant.now().plusSeconds(60)))
+                .header(CorrelationIds.HEADER, "missing-route-404")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectHeader().valueEquals(CorrelationIds.HEADER, "missing-route-404")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404)
+                .jsonPath("$.code").isEqualTo("ROUTE_NOT_FOUND")
+                .jsonPath("$.message").isEqualTo("No gateway route matches the request.")
+                .jsonPath("$.path").isEqualTo("/api/v1/not-routed")
+                .jsonPath("$.correlationId").isEqualTo("missing-route-404");
     }
 
     private String token(Instant expiresAt) throws Exception {

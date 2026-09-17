@@ -26,7 +26,11 @@ import java.util.Date;
 
 /** Real HTTP proxy checks with local downstream stubs, without service databases. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "security.jwt.secret=gateway-test-secret-with-at-least-32-bytes")
+        properties = {
+                "security.jwt.secret=gateway-test-secret-with-at-least-32-bytes",
+                "spring.cloud.gateway.server.webflux.httpclient.response-timeout=1s",
+                "resilience4j.timelimiter.configs.default.timeout-duration=5s"
+        })
 @AutoConfigureWebTestClient
 class GatewayRoutingIntegrationTest {
     private static final String SECRET = "gateway-test-secret-with-at-least-32-bytes";
@@ -74,6 +78,23 @@ class GatewayRoutingIntegrationTest {
                 .expectHeader().valueEquals(CorrelationIds.HEADER, "checkout-abc-123")
                 .expectHeader().valueEquals(
                         "X-Downstream-Correlation-ID", "checkout-abc-123");
+    }
+
+    @Test
+    void forwardsBearerTokenAndReplacesSpoofedIdentityHeaders() throws Exception {
+        String bearer = token("USER");
+
+        client.get().uri("/api/v1/payments/456")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .header("X-User-Id", "attacker")
+                .header("X-User-Email", "attacker@example.test")
+                .header("X-User-Roles", "ADMIN")
+                .exchange().expectStatus().isOk()
+                .expectHeader().valueEquals("X-Downstream-Authorization-Scheme", "Bearer")
+                .expectHeader().valueEquals("X-Downstream-User-Id", "routing-test-user")
+                .expectHeader().valueEquals(
+                        "X-Downstream-User-Email", "routing-user@example.test")
+                .expectHeader().valueEquals("X-Downstream-User-Roles", "USER");
     }
 
     @Test
@@ -148,7 +169,10 @@ class GatewayRoutingIntegrationTest {
         client.post().uri("/api/v1/products").headers(h -> h.setBearerAuth(user))
                 .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
                 .exchange().expectStatus().isForbidden()
-                .expectBody().jsonPath("$.message").isEqualTo("Access denied");
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("ACCESS_DENIED")
+                .jsonPath("$.message")
+                .isEqualTo("You do not have permission to access this resource.");
         client.post().uri("/api/v1/inventory").headers(h -> h.setBearerAuth(admin))
                 .contentType(MediaType.APPLICATION_JSON).bodyValue("{}")
                 .exchange().expectStatus().isOk()
@@ -170,15 +194,57 @@ class GatewayRoutingIntegrationTest {
         }
     }
 
+    @Test
+    void returnsStandardGatewayTimeoutWhenDownstreamRespondsTooSlowly() throws Exception {
+        String admin = token("ADMIN");
+        client.get().uri("/api/v1/orders/slow")
+                .headers(headers -> headers.setBearerAuth(admin))
+                .header(CorrelationIds.HEADER, "slow-order-test")
+                .exchange()
+                .expectStatus().isEqualTo(504)
+                .expectHeader().valueEquals(CorrelationIds.HEADER, "slow-order-test")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(504)
+                .jsonPath("$.code").isEqualTo("GATEWAY_TIMEOUT")
+                .jsonPath("$.message").isEqualTo(
+                        "The requested service did not respond in time.")
+                .jsonPath("$.path").isEqualTo("/api/v1/orders/slow")
+                .jsonPath("$.correlationId").isEqualTo("slow-order-test");
+    }
+
     private static DisposableServer downstream(String service) {
         return HttpServer.create().host("127.0.0.1").port(0)
-                .handle((request, response) -> response.status(200)
+                .handle((request, response) -> {
+                    Mono<String> body = Mono.just(service + ":" + request.uri());
+                    if ("/api/v1/orders/slow".equals(request.uri())) {
+                        body = body.delayElement(java.time.Duration.ofMillis(1500));
+                    }
+                    String authorization = request.requestHeaders()
+                            .get(org.springframework.http.HttpHeaders.AUTHORIZATION);
+                    response.status(200)
                         .header("X-Downstream-Service", service)
                         .header("X-Downstream-Uri", request.uri())
                         .header("X-Downstream-Correlation-ID",
-                                request.requestHeaders().get(CorrelationIds.HEADER))
-                        .sendString(Mono.just(service + ":" + request.uri())).then())
+                                request.requestHeaders().get(CorrelationIds.HEADER));
+                    if (authorization != null) {
+                        response.header("X-Downstream-Authorization-Scheme",
+                                authorization.startsWith("Bearer ") ? "Bearer" : "Other");
+                    }
+                    copyHeader(request, response, "X-User-Id", "X-Downstream-User-Id");
+                    copyHeader(request, response, "X-User-Email", "X-Downstream-User-Email");
+                    copyHeader(request, response, "X-User-Roles", "X-Downstream-User-Roles");
+                    return response.sendString(body).then();
+                })
                 .bindNow();
+    }
+
+    private static void copyHeader(reactor.netty.http.server.HttpServerRequest request,
+                                   reactor.netty.http.server.HttpServerResponse response,
+                                   String source, String destination) {
+        String value = request.requestHeaders().get(source);
+        if (value != null) {
+            response.header(destination, value);
+        }
     }
 
     private static String uri(DisposableServer server) { return "http://127.0.0.1:" + server.port(); }
@@ -188,6 +254,7 @@ class GatewayRoutingIntegrationTest {
                 .subject("routing-test-user")
                 .issuer("backend-platform-auth")
                 .audience("backend-platform-api")
+                .claim("email", "routing-user@example.test")
                 .claim("roles", roles)
                 .issueTime(Date.from(Instant.now()))
                 .expirationTime(Date.from(Instant.now().plusSeconds(120)))

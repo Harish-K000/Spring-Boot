@@ -10,6 +10,20 @@ explicit V1 safety rules. The five tools exposed to chat are
 
 ## Step 3.1 — Spring Boot foundation
 
+### One-command review
+
+After Ollama, the MCP tool server and the Engineering Agent are running, invoke
+the repository wrapper from the repository root:
+
+```sh
+./agent edge-gateway
+```
+
+The optional argument selects a registered service. Running `./agent` without an
+argument asks the review flow to infer the service from the changed-file list.
+The wrapper calls the fixed review endpoint, which collects Git evidence, builds,
+tests, scans and requests local model analysis through the MCP tool boundary.
+
 ### Files to understand
 
 - `pom.xml` inherits Java **25** and Spring Boot 3.5.10 from the repository parent.

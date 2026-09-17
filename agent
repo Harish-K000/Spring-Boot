@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -eu
+
+agent_url="${AGENT_URL:-http://127.0.0.1:8090}"
+
+if [ "$#" -gt 1 ]; then
+    echo "Usage: ./agent [service]" >&2
+    echo "Example: ./agent edge-gateway" >&2
+    exit 2
+fi
+
+if ! curl --silent --fail --max-time 3 "$agent_url/actuator/health" >/dev/null; then
+    echo "Engineering Agent is not running at $agent_url." >&2
+    echo "Start Ollama, the MCP tool server, and the Engineering Agent first." >&2
+    exit 1
+fi
+
+if [ "$#" -eq 1 ]; then
+    case "$1" in
+        *[!a-zA-Z0-9._-]*)
+            echo "Service must contain only letters, numbers, dot, underscore, or hyphen." >&2
+            exit 2
+            ;;
+    esac
+    payload=$(printf '%s' "$1" | python3 -c 'import json, sys; print(json.dumps({"service": sys.stdin.read()}))')
+else
+    payload='{}'
+fi
+
+curl --silent --show-error --max-time 600 \
+    "$agent_url/api/agent/review" \
+    -H 'Content-Type: application/json' \
+    --data-binary "$payload" \
+    | python3 -m json.tool
