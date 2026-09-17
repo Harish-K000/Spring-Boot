@@ -21,11 +21,12 @@ class AuthMigrationPostgresTest {
             new PostgreSQLContainer<>("postgres:15-alpine")
                     .withDatabaseName("platform")
                     .withUsername("platform")
-                    .withPassword("platform");
+                    .withPassword("platform")
+                    .withUrlParam("currentSchema", "auth");
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", AuthMigrationPostgresTest::jdbcUrlForAuthSchema);
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
@@ -35,12 +36,6 @@ class AuthMigrationPostgresTest {
         registry.add("spring.flyway.create-schemas", () -> "true");
         registry.add("spring.flyway.schemas", () -> "auth");
         registry.add("spring.flyway.default-schema", () -> "auth");
-    }
-
-    private static String jdbcUrlForAuthSchema() {
-        String jdbcUrl = POSTGRES.getJdbcUrl();
-        String separator = jdbcUrl.contains("?") ? "&" : "?";
-        return jdbcUrl + separator + "currentSchema=auth";
     }
 
     @Test
