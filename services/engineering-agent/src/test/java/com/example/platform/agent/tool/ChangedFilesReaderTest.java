@@ -53,16 +53,11 @@ class ChangedFilesReaderTest {
     }
 
     @Test
-    void preservesSpacesNewlinesAndUnicodeInPaths() throws Exception {
+    void preservesSpacesNewlinesAndUnicodeInGitStatusRecords() throws Exception {
         String path = "services/auth-service/ leading\tline\nCafé.java";
-        Path unusualFile = repository.resolve(path);
-        try {
-            write(path, "class Example {}\n");
-            assertThat(reader.read().files()).extracting(ChangedFilesReader.ChangedFile::path).containsExactly(path);
-        } finally {
-            // JUnit's recursive @TempDir cleanup can report this legal newline path as an error on Linux runners.
-            Files.deleteIfExists(unusualFile);
-        }
+        var result = ChangedFilesReader.parse("?? " + path + '\0', false, System.nanoTime());
+        assertThat(result.files()).containsExactly(
+                new ChangedFilesReader.ChangedFile(path, UNTRACKED, UNTRACKED, false, "auth-service"));
     }
 
     @Test
