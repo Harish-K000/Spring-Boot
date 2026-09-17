@@ -162,6 +162,7 @@ def sanitized_review(review: dict[str, Any], audit: dict[str, Any], reasons: lis
     report = review.get("report") if isinstance(review.get("report"), dict) else {}
     audit_review = audit.get("review") if isinstance(audit.get("review"), dict) else {}
     scanner_items = security.get("scanners") if isinstance(security.get("scanners"), list) else []
+    failure_items = tests.get("failures") if isinstance(tests.get("failures"), list) else []
     return {
         "reviewId": review.get("reviewId"),
         "service": review.get("service"),
@@ -170,8 +171,15 @@ def sanitized_review(review: dict[str, Any], audit: dict[str, Any], reasons: lis
         "reasons": reasons,
         "changedFileCount": len(changed.get("files", [])) if isinstance(changed.get("files"), list) else None,
         "build": {"status": build.get("status"), "exitCode": build.get("exitCode")},
-        "tests": {key: tests.get(key) for key in
-                  ("status", "exitCode", "total", "passed", "failed", "errors", "skipped", "serviceTests", "incomplete")},
+        "tests": {
+            **{key: tests.get(key) for key in
+               ("status", "exitCode", "total", "passed", "failed", "errors", "skipped", "serviceTests", "incomplete")},
+            # Class/method identity is enough to diagnose CI-only failures. Messages and stack traces stay private.
+            "failures": [
+                {key: item.get(key) for key in ("module", "test", "type")}
+                for item in failure_items[:20] if isinstance(item, dict)
+            ],
+        },
         "security": {
             "status": security.get("status"),
             "complete": security.get("complete"),
@@ -210,7 +218,7 @@ def write_summary(path: Path | None, expected_head: str, result: str,
         lines.append("### Blocking reasons")
         lines.extend(f"- {reason}" for reason in reasons)
         lines.append("")
-    lines.append("The uploaded JSON contains statuses and counts only. Review tokens, code, diffs, prompts, and raw diagnostics are omitted.")
+    lines.append("The uploaded JSON contains statuses, counts, and bounded failing-test identifiers. Review tokens, code, diffs, prompts, model prose, failure messages, and stack traces are omitted.")
     rendered = "\n".join(lines) + "\n"
     if path:
         path.parent.mkdir(parents=True, exist_ok=True)

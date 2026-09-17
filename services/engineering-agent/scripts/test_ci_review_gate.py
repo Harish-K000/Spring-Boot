@@ -18,7 +18,9 @@ def passing_review():
         "gitDiff": {"status": "SUCCESS", "truncated": False, "diff": "SECRET_DIFF"},
         "build": {"status": "PASS", "exitCode": 0, "diagnostics": ["SECRET_DIAGNOSTIC"]},
         "tests": {"status": "PASS", "exitCode": 0, "total": 12, "passed": 12, "failed": 0,
-                  "errors": 0, "skipped": 0, "serviceTests": 12, "incomplete": False},
+                  "errors": 0, "skipped": 0, "serviceTests": 12, "incomplete": False,
+                  "failures": [{"module": "engineering-agent", "test": "SafeTest.example",
+                                "type": "ERROR", "message": "SECRET_TEST_MESSAGE"}]},
         "security": {"status": "PASS", "complete": True, "totalFindings": 0,
                      "findingsTruncated": False, "scanners": [
                          {"name": name, "status": "PASS", "exitCode": 0, "findings": 0,
@@ -78,8 +80,10 @@ class GatePolicyTest(unittest.TestCase):
         safe = gate.sanitized_review(passing_review(), audit(), [])
         encoded = json.dumps(safe)
         for forbidden in ("SECRET_ACTION_TOKEN", "SECRET_DIFF", "SECRET_MODEL_TEXT",
-                          "SECRET_DIAGNOSTIC", "secret-name.java"):
+                          "SECRET_DIAGNOSTIC", "SECRET_TEST_MESSAGE", "secret-name.java"):
             self.assertNotIn(forbidden, encoded)
+        self.assertEqual([{"module": "engineering-agent", "test": "SafeTest.example", "type": "ERROR"}],
+                         safe["tests"]["failures"])
 
     def test_summary_and_json_are_written_without_sensitive_fields(self):
         with tempfile.TemporaryDirectory() as directory:

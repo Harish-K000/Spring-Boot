@@ -957,8 +957,8 @@ permission and no secrets.
 command from the pull request, validates the review audit against the PR head and
 blocks on incomplete Git evidence, compile/test problems, skipped tests, any
 scanner match, unavailable model review or accepted model finding. Its artifact
-contains only statuses and counts; action tokens, code, diffs, prompts, model prose
-and raw diagnostics are omitted. Policy tests live in
+contains only statuses, counts and bounded failing-test identifiers; action tokens, code, diffs,
+prompts, model prose, failure messages and stack traces are omitted. Policy tests live in
 `scripts/test_ci_review_gate.py` and also run in the ordinary backend workflow.
 
 See `docs/phase-5-github-agent-integration.md` for the complete step-by-step flow,

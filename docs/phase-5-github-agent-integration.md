@@ -129,7 +129,8 @@ the model prompt limit.
    status `SKIPPED` because no direct service code was supplied to the model.
 8. The gate fetches compact audit metadata and requires its commit hash to equal the PR head.
 9. The job writes a GitHub summary and uploads `engineering-agent-review.json`. The artifact contains
-   statuses and counts; it omits action tokens, source, diffs, prompts, model prose and diagnostics.
+   statuses, counts and bounded failing-test identifiers; it omits action tokens, source, diffs,
+   prompts, model prose, failure messages and stack traces.
 10. Exit code `0` produces **PASS**. Any missing, failing, mismatched or triage-required evidence exits
     `1` and produces **BLOCKED**.
 
