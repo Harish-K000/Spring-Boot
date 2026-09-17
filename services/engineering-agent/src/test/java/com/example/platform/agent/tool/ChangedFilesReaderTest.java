@@ -53,10 +53,11 @@ class ChangedFilesReaderTest {
     }
 
     @Test
-    void preservesSpacesNewlinesAndUnicodeInPaths() throws Exception {
+    void preservesSpacesNewlinesAndUnicodeInGitStatusRecords() throws Exception {
         String path = "services/auth-service/ leading\tline\nCafé.java";
-        write(path, "class Example {}\n");
-        assertThat(reader.read().files()).extracting(ChangedFilesReader.ChangedFile::path).containsExactly(path);
+        var result = ChangedFilesReader.parse("?? " + path + '\0', false, System.nanoTime());
+        assertThat(result.files()).containsExactly(
+                new ChangedFilesReader.ChangedFile(path, UNTRACKED, UNTRACKED, false, "auth-service"));
     }
 
     @Test

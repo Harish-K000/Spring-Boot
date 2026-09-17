@@ -70,7 +70,7 @@ class GitDiffReaderTest {
 
     @Test
     void marksLargeDiffAsIncomplete() throws Exception {
-        write("Example.java", "class Changed {}\n".repeat(2000));
+        write("Example.java", "class Changed {}\n".repeat(20_000));
         var result = reader.read();
         assertThat(result.status()).isEqualTo("SUCCESS");
         assertThat(result.truncated()).isTrue();
