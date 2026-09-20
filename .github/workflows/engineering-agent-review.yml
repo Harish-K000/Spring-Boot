@@ -29,8 +29,6 @@ jobs:
       OLLAMA_NO_CLOUD: "1"
       AGENT_MCP_URL: http://127.0.0.1:18091
       AGENT_URL: http://127.0.0.1:18090
-      AGENT_REPOSITORY: ${{ github.workspace }}
-      AGENT_REVIEW_BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
@@ -105,6 +103,9 @@ jobs:
         run: ./mvnw -B -ntp -pl services/engineering-agent -am package
 
       - name: Start MCP Server
+        env:
+          AGENT_REPOSITORY: ${{ github.workspace }}
+          AGENT_REVIEW_BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           nohup java -jar services/engineering-agent/target/engineering-agent-0.0.1-SNAPSHOT.jar \
@@ -125,6 +126,8 @@ jobs:
           curl --silent --fail --max-time 2 "$AGENT_MCP_URL/actuator/health" > /dev/null
 
       - name: Start Engineering Agent
+        env:
+          AGENT_REPOSITORY: ${{ github.workspace }}
         run: |
           set -euo pipefail
           nohup java -jar services/engineering-agent/target/engineering-agent-0.0.1-SNAPSHOT.jar \

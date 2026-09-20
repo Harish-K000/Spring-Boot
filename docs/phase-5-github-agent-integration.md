@@ -84,13 +84,7 @@ checks and branch protection make the final decision.
 
 ## Required checks
 
-During development, only the existing check remains required:
-
-```text
-Maven verify (Java 25)
-```
-
-After the agent workflow has successfully run on a pull request, branch protection will require:
+The current `main` branch protection already requires:
 
 ```text
 Maven verify (Java 25)
@@ -122,7 +116,7 @@ the model prompt limit.
 2. The runner starts its installed Ollama runtime on a dedicated loopback port and verifies the model ID.
 3. It verifies the installed Semgrep, Gitleaks and OSV-Scanner versions.
 4. The deterministic gate unit tests run before any review decision is trusted.
-5. Maven packages the agent, then GitHub starts Ollama, the MCP server and the agent on loopback.
+5. Maven packages and tests the agent, then GitHub starts the MCP server and the agent on loopback.
 6. MCP compares the configured base SHA with `HEAD` and identifies directly changed services plus
    any shared-path change.
 7. Each directly changed service compiles, runs its normal tests, runs all three scanners and
@@ -130,7 +124,7 @@ the model prompt limit.
    test and scan coverage to every registered service; indirectly affected services can have model
    status `SKIPPED` because no direct service code was supplied to the model.
 8. The gate fetches compact audit metadata and requires its commit hash to equal the PR head.
-9. The job writes a GitHub summary and uploads `engineering-agent-review.json`. The artifact contains
+9. The job writes a GitHub summary and uploads sanitized `review.json`. The artifact contains
    statuses, counts and bounded failing-test identifiers; it omits action tokens, source, diffs,
    prompts, model prose, failure messages and stack traces.
 10. Exit code `0` produces **PASS**. Any missing, failing, mismatched or triage-required evidence exits
@@ -167,13 +161,7 @@ python3 services/engineering-agent/scripts/ci_review_gate.py \
               ↓
 5.4  Repository rules / required Engineering Agent Review check
               ↓
-5.5  PR summary and evidence artifact
-              ↓
-5.6  Failure and tampering tests
-              ↓
-5.7  Require Engineering Agent Review on main
-              ↓
-5.8  Optional auto-merge request
+Later: optional auto-merge request
 ```
 
 The repository already requires both named checks. Phase 5.3 does not change branch protection
