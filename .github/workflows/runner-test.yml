@@ -1,0 +1,19 @@
+name: Runner Test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test runner
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+
+    steps:
+      - name: Test runner
+        run: |
+          echo "Self-hosted runner is working"
+          java -version
+          git --version
