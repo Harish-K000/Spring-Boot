@@ -44,6 +44,9 @@ process liveness checks. Run-specific logs and audit files live under `RUNNER_TE
 The always-run cleanup stops only the recorded job processes and removes private
 logs/audit databases; sanitized JSON remains available as the review artifact.
 GitHub's runner process cleanup also applies on cancellation.
+The job holds a bounded `caffeinate` idle-sleep assertion while running. Keep the
+Mac awake with its lid open and the runner online; the assertion cannot override
+lid closure or make a sleeping/offline runner accept a new job.
 
 The repository is public. Fork PRs are excluded from this Mac job, and the token is
 read-only with checkout credentials disabled. These are defense-in-depth controls,

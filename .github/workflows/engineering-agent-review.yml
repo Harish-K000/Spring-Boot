@@ -48,6 +48,9 @@ jobs:
           mkdir -m 700 "$REVIEW_STATE"
           echo "REVIEW_STATE=$REVIEW_STATE" >> "$GITHUB_ENV"
           echo "REVIEW_OUTPUT=$REVIEW_OUTPUT" >> "$GITHUB_ENV"
+          # Hold off idle sleep for this job; the Mac must still have its lid open.
+          nohup caffeinate -i -t 3600 > /dev/null 2>&1 &
+          echo "$!" > "$REVIEW_STATE/awake.pid"
           printf '{"schemaVersion":1,"headCommit":"%s","result":"BLOCKED","reasons":["review did not complete"],"services":[]}\n' \
             "$HEAD_SHA" > "$REVIEW_OUTPUT"
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -158,7 +161,7 @@ jobs:
         if: always()
         run: |
           [ -n "${REVIEW_STATE:-}" ] || exit 0
-          for component in agent mcp ollama; do
+          for component in agent mcp ollama awake; do
             pid_file="$REVIEW_STATE/$component.pid"
             if [ -f "$pid_file" ]; then
               pid=$(cat "$pid_file")
