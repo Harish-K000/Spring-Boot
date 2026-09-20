@@ -14,8 +14,8 @@ import java.util.concurrent.TimeoutException;
 @Component
 @Profile({"mcp-server", "test"})
 public class ChangedFilesReader {
-    static final int MAX_FILES = 100;
-    private static final int MAX_BYTES = 12_000;
+    static final int MAX_FILES = 500;
+    private static final int MAX_BYTES = 128_000;
     private static final Set<String> SERVICES = ToolExecutionPolicy.approvedServices();
     private static final String SCOPE = "Paths and Git status only for approved Java, SQL and pom.xml files. "
             + "Includes staged, unstaged and non-ignored untracked files. Sensitive, hidden and generated paths are excluded. "

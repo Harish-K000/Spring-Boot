@@ -45,6 +45,9 @@ jobs:
       - name: Verify Maven wrapper
         run: test -x ./mvnw
 
+      - name: Test the engineering-agent CI gate policy
+        run: python3 -m unittest services/engineering-agent/scripts/test_ci_review_gate.py
+
       - name: Build and run all tests
         run: ./mvnw --batch-mode --no-transfer-progress verify
 

@@ -5,6 +5,7 @@ import com.example.platform.agent.dto.SecurityResult;
 import com.example.platform.agent.tool.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.when;
 /** Opt-in local-model benchmark: exact review prompt/parser, fixture evidence, no Maven/scanner execution. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("test")
+@Tag("live")
 @EnabledIfEnvironmentVariable(named = "AGENT_LIVE_EVAL", matches = "true")
 class AgentEvaluationLiveTest {
     private static final String SERVICE = "engineering-agent";

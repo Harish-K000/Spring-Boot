@@ -1,0 +1,7 @@
+# GHSA-8jxr-pr72-r468 affects MCP Java SDK HTTP servers without Origin validation.
+# The advisory explicitly lists Spring AI as not affected because its web server
+# provides the required validation. Reassess when Spring AI 1.1.x can use MCP 1.x.
+[[IgnoredVulns]]
+id = "GHSA-8jxr-pr72-r468"
+ignoreUntil = 2026-12-31
+reason = "Spring AI's HTTP transport supplies the Origin validation required by the advisory."

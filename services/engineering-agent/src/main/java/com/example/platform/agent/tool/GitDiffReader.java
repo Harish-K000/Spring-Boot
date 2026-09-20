@@ -11,7 +11,8 @@ import java.util.regex.Pattern;
 @Component
 @Profile({"mcp-server", "test"})
 public class GitDiffReader {
-    static final int MAX_BYTES = 12_000;
+    // Large enough for normal service PRs while still bounding process output and API evidence.
+    static final int MAX_BYTES = 256_000;
     private static final String SCOPE = "Tracked Java, SQL and pom.xml changes from the configured Git comparison. "
             + "Untracked files, configuration and sensitive paths are excluded. "
             + "Known secret patterns are redacted; this is not a complete secret scanner.";
