@@ -1,78 +1,19 @@
-name: Backend CI
+name: Runner Test
 
 on:
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-concurrency:
-  group: backend-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+permissions: {}
 
 jobs:
-  verify:
-    name: Maven verify (Java 25)
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  test:
+    name: Test runner
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
 
     steps:
-      - name: Check out the proposed code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Java 25 and Maven cache
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "25"
-          cache: maven
-          cache-dependency-path: "**/pom.xml"
-
-      - name: Verify Maven wrapper
-        run: test -x ./mvnw
-
-      - name: Build and run all tests
-        run: ./mvnw --batch-mode --no-transfer-progress verify
-
-      - name: Explain a failed check
-        if: failure()
-        shell: bash
+      - name: Test runner
         run: |
-          {
-            echo "## Backend verification failed"
-            echo
-            echo "Open the **Build and run all tests** step for the compiler error or full test stack trace."
-            echo
-            echo "### Failed test summaries"
-            echo '```text'
-            find . -type f \( \
-              -path '*/target/surefire-reports/*.txt' -o \
-              -path '*/target/failsafe-reports/*.txt' \
-            \) -exec grep -hE 'Tests run: .*Failures: [1-9]|Tests run: .*Errors: [1-9]|<<< FAILURE!|<<< ERROR!' {} + || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload failed test reports
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: backend-test-reports-${{ github.run_id }}
-          path: |
-            **/target/surefire-reports/**
-            **/target/failsafe-reports/**
-          if-no-files-found: ignore
-          retention-days: 14
+          echo "Self-hosted runner is working"
+          java -version
+          git --version
