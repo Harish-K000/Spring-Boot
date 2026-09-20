@@ -6,6 +6,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
+/** Runs the review API or the approved tool server selected by the mcp-server profile. */
 @SpringBootApplication
 public class EngineeringAgentApplication {
     public static void main(String[] args) {
