@@ -2,13 +2,7 @@ name: Engineering Agent Review
 
 on:
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -18,41 +12,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  review:
+  engineering-review:
     name: Engineering Agent Review
-    if: github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    # Only trusted same-repository branches may execute on the persistent Mac.
+    # This condition is defense in depth, not a sandbox for hostile PR workflows.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     env:
-      OLLAMA_VERSION: "0.34.0"
-      OLLAMA_MODEL: "qwen2.5:1.5b"
-      OLLAMA_MODEL_ID: "65ec06548149"
-      OLLAMA_HOST: "127.0.0.1:11434"
+      AGENT_MODEL: qwen2.5:1.5b
+      OLLAMA_MODEL_ID: 65ec06548149
+      OLLAMA_HOST: 127.0.0.1:11435
       OLLAMA_NO_CLOUD: "1"
-      OLLAMA_MODELS: ${{ github.workspace }}/.ci-cache/ollama-models
-      REVIEW_OUTPUT: ${{ github.workspace }}/engineering-agent-review.json
-      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
-      REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
+      AGENT_MCP_URL: http://127.0.0.1:18091
+      AGENT_URL: http://127.0.0.1:18090
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
-      - name: Check out the exact pull-request head
+      - name: Checkout PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate immutable Git inputs
-        shell: bash
+      - name: Validate trusted CI revisions and prepare runtime
         run: |
           set -euo pipefail
-          [[ "$REVIEW_HEAD" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$REVIEW_BASE" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
-          git cat-file -e "$REVIEW_BASE^{commit}"
-          git merge-base --is-ancestor "$REVIEW_BASE" "$REVIEW_HEAD"
+          REVIEW_STATE="$RUNNER_TEMP/engineering-review-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REVIEW_OUTPUT="$REVIEW_STATE/review.json"
+          mkdir -m 700 "$REVIEW_STATE"
+          echo "REVIEW_STATE=$REVIEW_STATE" >> "$GITHUB_ENV"
+          echo "REVIEW_OUTPUT=$REVIEW_OUTPUT" >> "$GITHUB_ENV"
+          # Hold off idle sleep for this job; the Mac must still have its lid open.
+          nohup caffeinate -i -t 3600 > /dev/null 2>&1 &
+          echo "$!" > "$REVIEW_STATE/awake.pid"
           printf '{"schemaVersion":1,"headCommit":"%s","result":"BLOCKED","reasons":["review did not complete"],"services":[]}\n' \
-            "$REVIEW_HEAD" > "$REVIEW_OUTPUT"
+            "$HEAD_SHA" > "$REVIEW_OUTPUT"
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          # Three-dot review permits main to advance after the feature branch forks.
+          git merge-base "$BASE_SHA" "$HEAD_SHA" > /dev/null
+          echo /opt/homebrew/bin >> "$GITHUB_PATH"
+          echo "AGENT_AUDIT_DB_PATH=$REVIEW_STATE/audit" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import socket
+          for port in (11435, 18090, 18091):
+              with socket.socket() as probe:
+                  probe.bind(("127.0.0.1", port))
+          PY
 
       - name: Set up Java 25 and Maven cache
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -62,140 +76,104 @@ jobs:
           cache: maven
           cache-dependency-path: "**/pom.xml"
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.12"
-
-      - name: Cache the pinned Ollama runtime
-        id: ollama-runtime
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ github.workspace }}/.ci-cache/downloads/ollama-linux-amd64-0.34.0.tar.zst
-          key: ollama-linux-amd64-0.34.0
-
-      - name: Download the pinned Ollama runtime
-        if: steps.ollama-runtime.outputs.cache-hit != 'true'
-        shell: bash
+      - name: Verify installed scanners
         run: |
           set -euo pipefail
-          archive="$GITHUB_WORKSPACE/.ci-cache/downloads/ollama-linux-amd64-0.34.0.tar.zst"
-          mkdir -p "$(dirname "$archive")"
-          curl --fail --location --retry 3 \
-            "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst" \
-            --output "$archive"
-
-      - name: Install the pinned review tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$GITHUB_WORKSPACE/.ci-cache/downloads/ollama-linux-amd64-0.34.0.tar.zst"
-          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $archive" | sha256sum --check --strict
-          sudo tar --zstd --extract --file "$archive" --directory /usr/local
-          python -m pip install --disable-pip-version-check --no-input "semgrep==1.176.0"
-          tools="$RUNNER_TEMP/engineering-agent-tools"
-          mkdir -p "$tools"
-
-          gitleaks_archive="$RUNNER_TEMP/gitleaks.tar.gz"
-          curl --fail --location --retry 3 \
-            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
-            --output "$gitleaks_archive"
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $gitleaks_archive" | sha256sum --check --strict
-          tar --extract --gzip --file "$gitleaks_archive" --directory "$tools" gitleaks
-
-          curl --fail --location --retry 3 \
-            "https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_linux_amd64" \
-            --output "$tools/osv-scanner"
-          echo "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108  $tools/osv-scanner" | sha256sum --check --strict
-          chmod 0755 "$tools/gitleaks" "$tools/osv-scanner"
-          echo "$tools" >> "$GITHUB_PATH"
-
-      - name: Verify tool versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(ollama --version 2>&1 | sed -n 's/.*version is //p')" = "$OLLAMA_VERSION"
           test "$(semgrep --version)" = "1.176.0"
           test "$(gitleaks version)" = "8.30.1"
           osv-scanner --version | grep --fixed-strings "osv-scanner version: 2.6.0"
 
-      - name: Cache the pinned local model
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ github.workspace }}/.ci-cache/ollama-models
-          key: ollama-model-qwen2.5-1.5b-65ec06548149
-
-      - name: Start Ollama and verify the model
-        shell: bash
+      - name: Verify Ollama
         run: |
           set -euo pipefail
-          mkdir -p "$OLLAMA_MODELS"
-          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          # Use the Mac's installed model with a job-owned daemon on a separate port.
+          nohup ollama serve > "$REVIEW_STATE/ollama.log" 2>&1 &
+          pid=$!
+          echo "$pid" > "$REVIEW_STATE/ollama.pid"
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:11434/api/version > /dev/null; then break; fi
+            kill -0 "$pid"
+            if curl --silent --fail --max-time 2 "http://$OLLAMA_HOST/api/version" > /dev/null; then break; fi
             sleep 1
           done
-          curl --silent --fail http://127.0.0.1:11434/api/version > /dev/null
-          ollama pull "$OLLAMA_MODEL"
-          test "$(ollama list | awk -v model="$OLLAMA_MODEL" '$1 == model {print $2}')" = "$OLLAMA_MODEL_ID"
+          curl --silent --fail --max-time 2 "http://$OLLAMA_HOST/api/version" > /dev/null
+          ollama list
+          test "$(ollama list | awk -v model="$AGENT_MODEL" '$1 == model {print $2}')" = "$OLLAMA_MODEL_ID"
 
       - name: Test the deterministic gate policy
-        run: python -m unittest services/engineering-agent/scripts/test_ci_review_gate.py
+        run: python3 -m unittest services/engineering-agent/scripts/test_ci_review_gate.py
 
-      - name: Package the engineering agent
-        run: ./mvnw --batch-mode --no-transfer-progress -pl services/engineering-agent -am package -DskipTests
+      - name: Build Engineering Agent
+        run: ./mvnw -B -ntp -pl services/engineering-agent -am package
 
-      - name: Start the MCP tool server and engineering agent
-        shell: bash
+      - name: Start MCP Server
+        env:
+          AGENT_REPOSITORY: ${{ github.workspace }}
+          AGENT_REVIEW_BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          jar="services/engineering-agent/target/engineering-agent-0.0.1-SNAPSHOT.jar"
-          test -f "$jar"
-          nohup java -jar "$jar" \
+          nohup java -jar services/engineering-agent/target/engineering-agent-0.0.1-SNAPSHOT.jar \
             --spring.profiles.active=mcp-server \
-            --agent.repository="$GITHUB_WORKSPACE" \
-            --agent.review.base-commit="$REVIEW_BASE" \
+            --server.port=18091 \
             --agent.build.java-home="$JAVA_HOME" \
             --agent.security.semgrep-executable="$(command -v semgrep)" \
             --agent.security.gitleaks-executable="$(command -v gitleaks)" \
             --agent.security.osv-executable="$(command -v osv-scanner)" \
-            > "$RUNNER_TEMP/engineering-mcp.log" 2>&1 &
-
+            > "$REVIEW_STATE/engineering-mcp.log" 2>&1 &
+          pid=$!
+          echo "$pid" > "$REVIEW_STATE/mcp.pid"
           for attempt in {1..120}; do
-            if curl --silent --fail http://127.0.0.1:8091/actuator/health > /dev/null; then break; fi
+            kill -0 "$pid"
+            if curl --silent --fail --max-time 2 "$AGENT_MCP_URL/actuator/health" > /dev/null; then break; fi
             sleep 1
           done
-          curl --silent --fail http://127.0.0.1:8091/actuator/health > /dev/null
+          curl --silent --fail --max-time 2 "$AGENT_MCP_URL/actuator/health" > /dev/null
 
-          AGENT_MODEL="$OLLAMA_MODEL" \
-          AGENT_MCP_URL="http://127.0.0.1:8091" \
-          AGENT_AUDIT_DB_PATH="$RUNNER_TEMP/engineering-agent-audit" \
-          nohup java -jar "$jar" \
-            --agent.repository="$GITHUB_WORKSPACE" \
-            > "$RUNNER_TEMP/engineering-agent.log" 2>&1 &
-
-          for attempt in {1..120}; do
-            if curl --silent --fail http://127.0.0.1:8090/actuator/health > /dev/null; then break; fi
-            sleep 1
-          done
-          curl --silent --fail http://127.0.0.1:8090/actuator/health > /dev/null
-
-      - name: Run the PR evidence gate
+      - name: Start Engineering Agent
+        env:
+          AGENT_REPOSITORY: ${{ github.workspace }}
         run: |
-          python services/engineering-agent/scripts/ci_review_gate.py \
-            --expected-head "$REVIEW_HEAD" \
+          set -euo pipefail
+          nohup java -jar services/engineering-agent/target/engineering-agent-0.0.1-SNAPSHOT.jar \
+            --server.port=18090 \
+            --spring.ai.ollama.base-url="http://$OLLAMA_HOST" \
+            > "$REVIEW_STATE/engineering-agent.log" 2>&1 &
+          pid=$!
+          echo "$pid" > "$REVIEW_STATE/agent.pid"
+          for attempt in {1..120}; do
+            kill -0 "$pid"
+            if curl --silent --fail --max-time 2 "$AGENT_URL/actuator/health" > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --silent --fail --max-time 2 "$AGENT_URL/actuator/health" > /dev/null
+
+      - name: Run PR Review
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          # Existing gate calls POST /api/agent/review and verifies the audit SHA.
+          # Java owns the fixed base...HEAD Git commands; Qwen receives evidence only.
+          python3 services/engineering-agent/scripts/ci_review_gate.py \
+            --agent-url "$AGENT_URL" \
+            --expected-head "$HEAD_SHA" \
             --output "$REVIEW_OUTPUT"
 
-      - name: Show service startup diagnostics after failure
-        if: failure()
-        shell: bash
+      - name: Stop job-owned processes
+        if: always()
         run: |
-          echo "MCP server log (last 80 lines):"
-          tail -n 80 "$RUNNER_TEMP/engineering-mcp.log" 2>/dev/null || true
-          echo "Engineering agent log (last 80 lines):"
-          tail -n 80 "$RUNNER_TEMP/engineering-agent.log" 2>/dev/null || true
-          echo "Ollama log (last 40 lines):"
-          tail -n 40 "$RUNNER_TEMP/ollama.log" 2>/dev/null || true
+          [ -n "${REVIEW_STATE:-}" ] || exit 0
+          for component in agent mcp ollama awake; do
+            pid_file="$REVIEW_STATE/$component.pid"
+            if [ -f "$pid_file" ]; then
+              pid=$(cat "$pid_file")
+              kill "$pid" 2>/dev/null || true
+              for attempt in {1..10}; do
+                if ! kill -0 "$pid" 2>/dev/null; then break; fi
+                sleep 1
+              done
+              if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+              rm -f "$pid_file"
+            fi
+          done
 
       - name: Upload sanitized review evidence
         if: always()
@@ -205,3 +183,10 @@ jobs:
           path: ${{ env.REVIEW_OUTPUT }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove private runtime files
+        if: always()
+        run: |
+          [ -n "${REVIEW_STATE:-}" ] || exit 0
+          # Audit databases include local action tokens; never upload them or raw logs.
+          rm -f "$REVIEW_STATE"/*.db "$REVIEW_STATE"/*.log
