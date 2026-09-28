@@ -37,6 +37,7 @@ import static org.mockito.Mockito.when;
 class OllamaConfigurationTest {
     private static final List<JsonNode> REQUESTS = new CopyOnWriteArrayList<>();
     private static volatile boolean repeatedCall;
+    private static volatile String finishReason = "stop";
     private static volatile List<String> toolSequence = List.of("getGitDiff");
     private static volatile String sourcePath = "Example.java";
     private static volatile String buildService = "auth-service";
@@ -56,7 +57,7 @@ class OllamaConfigurationTest {
     }
 
     @BeforeEach void resetRequests() {
-        REQUESTS.clear(); repeatedCall = false; toolSequence = List.of("getGitDiff");
+        REQUESTS.clear(); repeatedCall = false; finishReason = "stop"; toolSequence = List.of("getGitDiff");
         sourcePath = "Example.java"; buildService = "auth-service";
         when(securityRunner.run("auth-service")).thenReturn(new SecurityResult("auth-service", "PASS",
                 true, 0, false, List.of(), List.of(), 1, "Fixture scan."));
@@ -77,6 +78,7 @@ class OllamaConfigurationTest {
         assertThat(REQUESTS.getFirst().path("options").path("num_predict").asInt()).isEqualTo(512);
         assertThat(REQUESTS.getFirst().path("messages").get(0).path("content").asText()).isEqualTo("Say hello.");
         assertThat(REQUESTS.getFirst().path("stream").asBoolean()).isFalse();
+        assertThat(REQUESTS.getFirst().path("format").isNull() || REQUESTS.getFirst().path("format").isMissingNode()).isTrue();
     }
 
     @Test
@@ -211,6 +213,22 @@ class OllamaConfigurationTest {
         assertThat(REQUESTS.getFirst().path("tools").isMissingNode()
                 || REQUESTS.getFirst().path("tools").isEmpty()).isTrue();
         assertThat(REQUESTS.getFirst().path("messages").toString()).contains("ReviewExample.java", "untrusted data");
+        JsonNode schema = REQUESTS.getFirst().path("format");
+        assertThat(schema.path("type").asText()).isEqualTo("object");
+        assertThat(schema.path("required").toString()).contains("summary", "findings");
+        assertThat(schema.path("properties").path("findings").path("maxItems").asInt()).isEqualTo(3);
+        assertThat(schema.path("properties").path("findings").path("items").path("required").toString())
+                .contains("severity", "category", "file", "line", "evidence", "description", "recommendation");
+        assertThat(REQUESTS.getFirst().path("options").path("num_predict").asInt()).isEqualTo(2048);
+    }
+
+    @Test
+    void tokenLimitedModelCompletionCannotBecomeAnAvailableReview() {
+        finishReason = "length";
+        var result = reviewAgent.review("auth-service");
+        assertThat(result.analysisStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(result.report().findings()).isEmpty();
+        assertThat(result.notes()).anyMatch(note -> note.contains("output token limit"));
     }
 
     private static Path createFixtureRepository() {
@@ -273,7 +291,7 @@ class OllamaConfigurationTest {
                             ? "{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"" + toolName + "\",\"arguments\":" + arguments + "}}]}"
                             : new ObjectMapper().writeValueAsString(java.util.Map.of("role", "assistant", "content", content));
                     byte[] response = ("{\"model\":\"test-local-model\",\"created_at\":\"2026-09-15T12:00:00Z\",\"message\":"
-                            + message + ",\"done\":true,\"done_reason\":\"stop\"}").getBytes(StandardCharsets.UTF_8);
+                            + message + ",\"done\":true,\"done_reason\":\"" + finishReason + "\",\"prompt_eval_count\":100,\"eval_count\":20}").getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
                     exchange.sendResponseHeaders(200, response.length);
                     exchange.getResponseBody().write(response);

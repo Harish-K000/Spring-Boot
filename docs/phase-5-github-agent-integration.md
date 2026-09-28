@@ -23,30 +23,36 @@ GitHub PR: PASS or BLOCKED
 GitHub remains the merge authority. The engineering agent produces evidence and a review result;
 it does not receive permission to bypass branch protection or push to `main`.
 
-## 5.1 Execution and trust boundary
+## 5.3 Automatic review on the self-hosted Mac
 
-The repository is public, so PR code must not execute on the developer's Mac. GitHub warns that a
-self-hosted runner attached to a public repository can be persistently compromised by code from a
-pull request. The automated review therefore runs on a fresh GitHub-hosted `ubuntu-latest` runner.
+The `Engineering Agent Review` workflow runs on `[self-hosted, macOS, ARM64]` for
+same-repository PRs on `opened`, `synchronize`, `reopened` and `ready_for_review`,
+including drafts. It checks out the exact event head SHA with full history and passes
+`AGENT_REVIEW_BASE_COMMIT` from the event to the MCP server at startup. Java validates
+the base and constructs its fixed `base...HEAD` comparison; Qwen never chooses Git
+arguments. The existing `ci_review_gate.py` calls `POST /api/agent/review`, checks the
+audit commit against the event head, and maps complete evidence to exit 0 or 1.
 
-The review job will:
+Runner prerequisites are Python 3, Ollama, the `qwen2.5:1.5b` model (ID
+`65ec06548149`), Semgrep 1.176.0, Gitleaks 8.30.1 and OSV-Scanner 2.6.0. Java 25 is
+provisioned by the pinned setup action. Scanner versions and the installed model ID
+are checked before the review starts. Missing tools/models fail the check.
 
-1. Check out the exact pull-request revision.
-2. Pass the trusted base commit SHA as startup configuration and check out the exact head SHA. The
-   bounded Git tools compare that base to `HEAD` directly; the model and HTTP request cannot choose
-   revisions.
-3. Set up Java 25 and the Maven dependency cache.
-4. Install pinned versions of Ollama, Semgrep, Gitleaks, and OSV-Scanner.
-5. Pull the configured small Ollama model, then disable cloud inference.
-6. Build and start the engineering MCP server on loopback.
-7. Build and start the Spring AI engineering agent on loopback.
-8. Review each directly changed registered service with the fixed review endpoint. If an approved
-   shared path changed, conservatively review all seven registered services.
-9. Publish a sanitized GitHub job summary and JSON evidence artifact.
-10. Return success or failure through one uniquely named `Engineering Agent Review` check.
+The job starts its own local-only Ollama daemon on 11435, MCP on 18091 and agent on
+18090, after checking those ports are free. Startup uses bounded health checks and
+process liveness checks. Run-specific logs and audit files live under `RUNNER_TEMP`.
+The always-run cleanup stops only the recorded job processes and removes private
+logs/audit databases; sanitized JSON remains available as the review artifact.
+GitHub's runner process cleanup also applies on cancellation.
+The job holds a bounded `caffeinate` idle-sleep assertion while running. Keep the
+Mac awake with its lid open and the runner online; the assertion cannot override
+lid closure or make a sleeping/offline runner accept a new job.
 
-The workflow uses a read-only `GITHUB_TOKEN`, receives no repository secrets, and exposes neither
-local services nor review action tokens outside the temporary runner.
+The repository is public. Fork PRs are excluded from this Mac job, and the token is
+read-only with checkout credentials disabled. These are defense-in-depth controls,
+not isolation: PR workflow code itself can change. A persistent personal Mac must
+only run trusted code; untrusted contributions need isolated disposable runners.
+The SHA checks constrain the agent's Git interface, not arbitrary Maven/PR code.
 
 ## Gate policy
 
@@ -81,13 +87,7 @@ checks and branch protection make the final decision.
 
 ## Required checks
 
-During development, only the existing check remains required:
-
-```text
-Maven verify (Java 25)
-```
-
-After the agent workflow has successfully run on a pull request, branch protection will require:
+The current `main` branch protection already requires:
 
 ```text
 Maven verify (Java 25)
@@ -101,7 +101,7 @@ both gates again.
 
 | File | Responsibility |
 | --- | --- |
-| `.github/workflows/engineering-agent-review.yml` | Runs the isolated PR review job with read-only repository permission and pinned actions/tools. |
+| `.github/workflows/engineering-agent-review.yml` | Runs the trusted same-repository PR review on the Mac with read-only repository permission and pinned actions. |
 | `services/engineering-agent/scripts/ci_review_gate.py` | Calls the fixed review API, verifies the audit commit, applies the PASS/BLOCKED policy and emits sanitized evidence. |
 | `services/engineering-agent/scripts/test_ci_review_gate.py` | Proves pass, test-failure, scanner-failure, malformed-response, commit-tampering and secret-omission behavior. |
 | `services/engineering-agent/osv-scanner.toml` | Records the dated MCP advisory exception whose own advisory says Spring AI is unaffected. |
@@ -116,11 +116,10 @@ the model prompt limit.
 ## What happens on a pull request
 
 1. GitHub checks out the exact PR head with full history and validates both event SHAs.
-2. The runner restores or downloads the checksum-verified Ollama runtime and model, then verifies
-   their expected versions/ID.
-3. It installs exact Semgrep, Gitleaks and OSV-Scanner versions and verifies each executable.
+2. The runner starts its installed Ollama runtime on a dedicated loopback port and verifies the model ID.
+3. It verifies the installed Semgrep, Gitleaks and OSV-Scanner versions.
 4. The deterministic gate unit tests run before any review decision is trusted.
-5. Maven packages the agent, then GitHub starts Ollama, the MCP server and the agent on loopback.
+5. Maven packages and tests the agent, then GitHub starts the MCP server and the agent on loopback.
 6. MCP compares the configured base SHA with `HEAD` and identifies directly changed services plus
    any shared-path change.
 7. Each directly changed service compiles, runs its normal tests, runs all three scanners and
@@ -128,7 +127,7 @@ the model prompt limit.
    test and scan coverage to every registered service; indirectly affected services can have model
    status `SKIPPED` because no direct service code was supplied to the model.
 8. The gate fetches compact audit metadata and requires its commit hash to equal the PR head.
-9. The job writes a GitHub summary and uploads `engineering-agent-review.json`. The artifact contains
+9. The job writes a GitHub summary and uploads sanitized `review.json`. The artifact contains
    statuses, counts and bounded failing-test identifiers; it omits action tokens, source, diffs,
    prompts, model prose, failure messages and stack traces.
 10. Exit code `0` produces **PASS**. Any missing, failing, mismatched or triage-required evidence exits
@@ -161,22 +160,15 @@ python3 services/engineering-agent/scripts/ci_review_gate.py \
               ↓
 5.2  PR-aware Git evidence
               ↓
-5.3  Headless review command and exit policy
+5.3  Automatic Engineering Agent Review on the self-hosted Mac
               ↓
-5.4  GitHub-hosted agent workflow
+5.4  Repository rules / required Engineering Agent Review check
               ↓
-5.5  PR summary and evidence artifact
-              ↓
-5.6  Failure and tampering tests
-              ↓
-5.7  Require Engineering Agent Review on main
-              ↓
-5.8  Optional auto-merge request
+Later: optional auto-merge request
 ```
 
-Steps 5.1 through 5.7 are delivered together. Step 5.8 remains deliberately optional: automatic
-merge is disabled, so the repository owner still chooses when to merge after both required checks
-pass.
+The repository already requires both named checks. Phase 5.3 does not change branch protection
+or enable automatic merge. The owner still chooses when to merge after required checks pass.
 
 ## References
 
