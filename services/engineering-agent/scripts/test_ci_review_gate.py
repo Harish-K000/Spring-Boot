@@ -39,6 +39,14 @@ class GatePolicyTest(unittest.TestCase):
     def test_complete_clean_evidence_passes(self):
         self.assertEqual([], gate.evaluate_review(passing_review(), audit(), "a" * 40))
 
+    def test_invalid_or_missing_model_review_still_blocks(self):
+        for status in ("MALFORMED", "UNAVAILABLE", "SKIPPED"):
+            with self.subTest(status=status):
+                review = passing_review()
+                review["analysisStatus"] = status
+                self.assertIn("structured model review is unavailable",
+                              gate.evaluate_review(review, audit(), "a" * 40))
+
     def test_failed_or_skipped_tests_block(self):
         review = passing_review()
         review["tests"]["skipped"] = 1

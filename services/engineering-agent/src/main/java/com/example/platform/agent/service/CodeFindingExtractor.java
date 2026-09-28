@@ -4,6 +4,7 @@ import com.example.platform.agent.dto.ReviewReport;
 import com.example.platform.agent.tool.SourceFileReader;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -13,7 +14,7 @@ import java.util.regex.Pattern;
 
 /** Accepts only bounded model hypotheses that cite a visible line of selected-service code. */
 final class CodeFindingExtractor {
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private static final Pattern HUNK = Pattern.compile("^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@.*$");
     private static final Set<String> SEVERITIES = Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
     private static final Set<String> CATEGORIES = Set.of("AUTHENTICATION", "AUTHORIZATION", "SQL_QUERY",
@@ -42,7 +43,7 @@ final class CodeFindingExtractor {
         } catch (JsonProcessingException ex) {
             return malformed();
         }
-        if (!root.isObject() || !root.path("findings").isArray()) return malformed();
+        if (root == null || !root.isObject() || !root.path("findings").isArray()) return malformed();
         String summary = boundedText(root.path("summary"), 600);
         if (summary == null) return malformed();
 
@@ -79,7 +80,8 @@ final class CodeFindingExtractor {
         String description = boundedText(node.path("description"), 500);
         String recommendation = boundedText(node.path("recommendation"), 500);
         JsonNode lineNode = node.path("line");
-        if (!SEVERITIES.contains(severity) || !CATEGORIES.contains(category)
+        if (severity == null || category == null
+                || !SEVERITIES.contains(severity) || !CATEGORIES.contains(category)
                 || file == null || evidence == null || evidence.contains("[REDACTED")
                 || evidence.trim().length() < 8
                 || description == null || recommendation == null

@@ -109,6 +109,14 @@ or per-request API charges. Application startup does not automatically download 
 
 ## Step 3.3 — ChatClient smoke test
 
+The fixed review flow sends an explicit JSON Schema through Ollama's native
+`format` option, requiring a summary and at most three structured findings. Review
+calls use an 8,192-token context window, a 2,048-token output limit and temperature
+zero; ordinary chat keeps the configured defaults. Java still validates each
+finding against visible code evidence. Schema-constrained output does not prove
+that a model finding is correct. Token-limited, malformed or unavailable reviews
+remain blocking CI evidence; no model retry or synthetic passing review is used.
+
 ```text
 POST /api/agent/chat → AgentChatController → AgentChatService → ChatClient → Ollama
 ```

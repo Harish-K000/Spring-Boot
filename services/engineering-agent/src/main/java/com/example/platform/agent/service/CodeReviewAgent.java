@@ -4,6 +4,7 @@ import com.example.platform.agent.dto.ReviewResponse;
 import com.example.platform.agent.dto.ReviewReport;
 import com.example.platform.agent.tool.*;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.stereotype.Service;
@@ -180,8 +181,18 @@ public class CodeReviewAgent {
                 String diffPreview = preview(scopedDiff, MODEL_DIFF_CHARS);
                 String sourcePreview = source != null && source.status().equals("SUCCESS")
                         ? preview(source.content(), MODEL_SOURCE_CHARS) : "";
-                String raw = analysisClient.prompt().user(modelPrompt(selected, files, diffPreview,
-                        source, sourcePreview, build, tests, security)).call().content();
+                var completion = analysisClient.prompt()
+                        .options(OllamaChatOptions.builder().format(ReviewOutputSchema.schema())
+                                .numPredict(2048).numCtx(8192).temperature(0.0).build())
+                        .user(modelPrompt(selected, files, diffPreview,
+                                source, sourcePreview, build, tests, security)).call().chatResponse();
+                var generation = completion == null ? null : completion.getResult();
+                String raw = generation == null ? null : generation.getOutput().getText();
+                // A token-limited completion is incomplete even if its prefix parses as JSON.
+                if (generation != null && "length".equals(generation.getMetadata().getFinishReason())) {
+                    raw = "";
+                    notes.add("The model reached its output token limit; its review is incomplete.");
+                }
                 if (raw == null || raw.isBlank()) {
                     analysisStatus = "UNAVAILABLE";
                 } else {
