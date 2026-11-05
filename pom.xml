@@ -161,6 +161,7 @@
     <module>services/edge-gateway</module>
     <module>services/worker</module>
     <module>services/engineering-agent</module>
+    <module>services/iot-telemetry-service</module>
     <module>tests/platform-e2e</module>
 
     <!-- Optional shared libs -->
