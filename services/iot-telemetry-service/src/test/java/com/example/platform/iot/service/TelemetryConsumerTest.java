@@ -11,16 +11,19 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class TelemetryConsumerTest {
 
     @Test
-    void duplicateEventIsIgnoredBeforeCreatingAnotherAlert() {
+    void duplicateEventDoesNotCreateAnotherAlert() {
         var telemetryRepository = mock(TelemetryReadingRepository.class);
         var alertRepository = mock(AlertRepository.class);
-        when(telemetryRepository.existsByEventId(any(UUID.class))).thenReturn(true);
+        when(telemetryRepository.insertIfAbsent(
+                any(), any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
 
         var consumer = new TelemetryConsumer(
                 telemetryRepository, alertRepository, new ThresholdEvaluator(),
@@ -33,15 +36,17 @@ class TelemetryConsumerTest {
 
         consumer.consume(event);
 
-        verify(telemetryRepository, never()).save(any());
         verifyNoInteractions(alertRepository);
     }
 
     @Test
-    void persistsReadingAndCreatesThresholdAlerts() {
+    void uniqueEventIsPersistedAndCreatesThresholdAlerts() {
         var telemetryRepository = mock(TelemetryReadingRepository.class);
         var alertRepository = mock(AlertRepository.class);
-        when(telemetryRepository.existsByEventId(any(UUID.class))).thenReturn(false);
+        when(telemetryRepository.insertIfAbsent(
+                any(), any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
 
         var consumer = new TelemetryConsumer(
                 telemetryRepository, alertRepository, new ThresholdEvaluator(),
@@ -54,7 +59,6 @@ class TelemetryConsumerTest {
 
         consumer.consume(event);
 
-        verify(telemetryRepository).save(any());
         verify(alertRepository, times(2)).save(any());
     }
 }
