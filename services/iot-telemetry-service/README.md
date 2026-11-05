@@ -1,5 +1,11 @@
 # IoT Telemetry Service
 
+## Development method
+
+This service is built specification-first. Before changing behavior, read `CONTEXT.md`, the active spec under `spec/`, and `ADR.md`. Coding agents use `AGENTS.md`/`CLAUDE.md`; deterministic tests and the Engineering Agent provide verification evidence.
+
+AWS deployment is deliberately deferred to the final phase; see `AWS_DEPLOYMENT_PLAN.md`.
+
 Industrial asset-monitoring vertical slice built to generate real engineering evidence for interview preparation.
 
 ## Milestone 1
